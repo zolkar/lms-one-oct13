@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/aicc_hacp/db" VERSION="2025101300" COMMENT="XMLDB file for local_aicc_hacp plugin">
+  <TABLES>
+    <TABLE NAME="local_aicc_hacp_logs" COMMENT="Logs for AICC HACP requests">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="session_id" TYPE="char" LENGTH="36" NOTNULL="false"/>
+        <FIELD NAME="command" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="request_body" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="signature_valid" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="remote_ip" TYPE="char" LENGTH="45" NOTNULL="false"/>
+        <FIELD NAME="user_agent" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="parsed_data_json" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="result_code" TYPE="int" LENGTH="3" NOTNULL="false"/>
+        <FIELD NAME="result_message" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="local_aicc_hacp_usermap" COMMENT="Manual user mappings for AICC HACP">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+  <FIELD NAME="external_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
+  <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+  <FIELD NAME="trusted_origin" TYPE="char" LENGTH="100" NOTNULL="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="external_id_uk" TYPE="unique" FIELDS="external_id, trusted_origin"/>
+      </KEYS>
+    </TABLE>
+  </TABLES>
+</XMLDB>
