@@ -7,6 +7,9 @@ defined('MOODLE_INTERNAL') || die();
 class launcher {
     public static function sign_token(array $payload): string {
         $secret = get_config('local_aicc_export', 'launch_token_secret');
+        if (empty($secret)) {
+            throw new \moodle_exception('error_missing_token_secret', 'local_aicc_export');
+        }
         $json = json_encode($payload);
         $b64 = rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
         $sig = hash_hmac('sha256', $b64, $secret, true);
@@ -16,6 +19,9 @@ class launcher {
 
     public static function validate_token(string $token) {
         $secret = get_config('local_aicc_export', 'launch_token_secret');
+        if (empty($secret)) {
+            return false;
+        }
         $parts = explode('.', $token);
         if (count($parts) !== 2) {
             return false;
@@ -28,7 +34,7 @@ class launcher {
         }
 
         $payload = json_decode(base64_decode(strtr($b64, '-_', '+/')), true);
-        if (empty($payload) || !is_array($payload) || $payload['expires_at'] < time()) {
+        if (empty($payload) || !is_array($payload) || ($payload['expires_at'] ?? 0) < time()) {
             return false;
         }
 

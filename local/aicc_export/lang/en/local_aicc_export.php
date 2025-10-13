@@ -1,3 +1,5 @@
+$string['error_missing_token_secret'] = 'AICC launch token secret is not configured. Please contact your administrator.';
+$string['export_failed'] = 'AICC export failed: {$a}';
 <?php
 
 defined('MOODLE_INTERNAL') || die();

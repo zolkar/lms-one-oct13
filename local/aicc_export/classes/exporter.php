@@ -1,12 +1,20 @@
 <?php
-
 namespace local_aicc_export;
 
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/launcher.php');
 
+
 class exporter {
+    /**
+     * @var array<int,object> Map of SCO id to SCO object
+     */
+    protected $sco_id_map = [];
+    /**
+     * @var array<string,int> Map of SCO identifier to SCO id
+     */
+    protected $sco_identifier_map = [];
 
     protected $course;
     protected $scorm;
@@ -17,6 +25,15 @@ class exporter {
         $this->course = $course;
         $this->scorm = $scorm;
         $this->scos = $DB->get_records('scorm_scoes', ['scorm' => $this->scorm->id], 'id');
+        // Build a map of id => sco and identifier => id for parent/child mapping.
+        $this->sco_id_map = [];
+        $this->sco_identifier_map = [];
+        foreach ($this->scos as $sco) {
+            $this->sco_id_map[$sco->id] = $sco;
+            if (!empty($sco->identifier)) {
+                $this->sco_identifier_map[$sco->identifier] = $sco->id;
+            }
+        }
     }
 
     public function generate_package(): string {
@@ -29,91 +46,222 @@ class exporter {
 
         $basefilename = clean_filename($this->course->shortname);
 
+        // Always generate all 7 AICC files, even if empty.
         $zip->addFromString($basefilename . '.crs', $this->get_crs_content());
         $zip->addFromString($basefilename . '.cst', $this->get_cst_content());
         $zip->addFromString($basefilename . '.des', $this->get_des_content());
         $zip->addFromString($basefilename . '.au', $this->get_au_content());
+        $zip->addFromString($basefilename . '.ort', $this->get_ort_content());
+        $zip->addFromString($basefilename . '.pre', $this->get_pre_content());
+        $zip->addFromString($basefilename . '.cmp', $this->get_cmp_content());
 
         $zip->close();
-
         return $zipfilename;
+    }
+    // Empty .ort file with correct section header.
+    protected function get_ort_content(): string {
+        return "[Objectives]\r\n";
+    }
+
+    // Empty .pre file with correct section header.
+    protected function get_pre_content(): string {
+        return "[Prerequisites]\r\n";
+    }
+
+    // Empty .cmp file with correct section header.
+    protected function get_cmp_content(): string {
+        return "[Completion]\r\n";
     }
 
     protected function get_crs_content(): string {
-        $content = "[Course]\r\n";
+        $content  = "[Course]\r\n";
         $content .= "Course_ID=COURSE-{$this->course->id}\r\n";
-        $content .= "Course_Title={$this->course->fullname}\r\n";
-        $content .= "Version=1.0\r\n";
+        $content .= "Course_Title=" . $this->escape_aicc($this->course->fullname) . "\r\n";
+        $content .= "Version=" . get_config('local_aicc_export', 'default_aicc_version') . "\r\n";
         $content .= "Course_Date=" . date('Y-m-d') . "\r\n";
+        $content .= "Level=1\r\n";
+        $content .= "Language=en\r\n";
+        $content .= "Company=Moodle\r\n";
+        $content .= "Description=" . $this->escape_aicc($this->course->summary ?? '') . "\r\n";
         return $content;
     }
 
     protected function get_cst_content(): string {
-        $content = "[Course Structure]\r\n";
-        $i = 1;
-        foreach ($this->scos as $sco) {
-            // reference the AU by identifier (we generate Identifier=AU<id> in the AU block)
-            $content .= "Block{$i}=AU{$sco->id}\r\n";
-            $i++;
+        // CSV-style CST file, no trailing blank line, skip invalid AUs
+        $header = [
+            'block_id', 'block_title', 'block_type', 'parent_block_id', 'au_list'
+        ];
+        $rows = [];
+        $rows[] = '"' . implode('","', $header) . '"';
+        $au_list = implode(',', array_filter(array_map(function($sco) {
+            $id = $sco->id ?? '';
+            return ($id !== '' && $id !== null) ? 'AU' . $id : '';
+        }, $this->scos)));
+        if (empty($au_list)) {
+            return implode("\r\n", $rows);
         }
-        return $content;
+        $block_id = 'B1';
+        $block_title = 'Course Content';
+        $block_type = 'Normal';
+        $parent_block_id = '';
+        $row = [
+            $block_id,
+            $block_title,
+            $block_type,
+            $parent_block_id,
+            $au_list
+        ];
+        $row = array_map(function($v) { return '"' . str_replace('"', '""', $v) . '"'; }, $row);
+        $rows[] = implode(',', $row);
+        return implode("\r\n", $rows);
     }
 
     protected function get_des_content(): string {
-        $content = "[Description]\r\n";
-        $content .= "Title={$this->scorm->name}\r\n";
-        $content .= "Author=Moodle A\r\n";
-        $content .= "Abstract=Access SCORM hosted on Moodle A\r\n";
-        return $content;
+        // Add 'parent' column for Moodle import compatibility, using real parent/child structure.
+        $header = [
+            'system_id', 'title', 'parent', 'type', 'command_line', 'Max_Time_Allowed', 'time_limit_action',
+            'file_name', 'max_score', 'mastery_score', 'system_vendor', 'core_vendor', 'web_launch', 'AU_password'
+        ];
+        $rows = [];
+        $rows[] = '"' . implode('","', $header) . '"';
+        foreach ($this->scos as $sco) {
+            $id = $sco->id ?? '';
+            if ($id === '' || $id === null) {
+                continue;
+            }
+            $auid = 'AU' . $id;
+            $system_id = $auid;
+            $title = $this->get_sco_title($sco);
+            if (empty($title)) {
+                $title = $auid;
+            }
+            // Determine parent: if root, '/', else AU{parent_id}
+            $parent = '/';
+            if (!empty($sco->parent) && $sco->parent !== '/' && $sco->parent !== $sco->organization) {
+                // Try to resolve parent as identifier or id
+                if (isset($this->sco_identifier_map[$sco->parent])) {
+                    $parentid = $this->sco_identifier_map[$sco->parent];
+                    $parent = 'AU' . $parentid;
+                } elseif (isset($this->sco_id_map[$sco->parent])) {
+                    $parent = 'AU' . $sco->parent;
+                } else {
+                    $parent = $sco->parent; // fallback, but should not happen
+                }
+            }
+            $type = '';
+            $command_line = '';
+            $max_time_allowed = '';
+            $time_limit_action = '';
+            $file_name = $this->get_launch_url($sco->id);
+            $max_score = is_numeric($this->scorm->maxgrade ?? null) ? $this->scorm->maxgrade : '';
+            $mastery_score = $max_score;
+            $system_vendor = 'Moodle';
+            $core_vendor = '';
+            $web_launch = $file_name;
+            $au_password = '';
+
+            $row = [
+                $system_id,
+                $title,
+                $parent,
+                $type,
+                $command_line,
+                $max_time_allowed,
+                $time_limit_action,
+                $file_name,
+                $max_score,
+                $mastery_score,
+                $system_vendor,
+                $core_vendor,
+                $web_launch,
+                $au_password
+            ];
+            $row = array_map(function($v) {
+                return '"' . str_replace('"', '""', $v) . '"';
+            }, $row);
+            $rows[] = implode(',', $row);
+        }
+        return implode("\r\n", $rows);
     }
 
     protected function get_au_content(): string {
-        $content = "[Assignable Units]\r\n";
-        // AU list: AUxxxx=Title
+        // Add 'parent' column for Moodle import compatibility, using real parent/child structure.
+        $header = [
+            'system_id', 'title', 'parent', 'type', 'command_line', 'Max_Time_Allowed', 'time_limit_action',
+            'file_name', 'max_score', 'mastery_score', 'system_vendor', 'core_vendor', 'web_launch', 'AU_password'
+        ];
+        $rows = [];
+        $rows[] = '"' . implode('","', $header) . '"';
+
         foreach ($this->scos as $sco) {
-            $auid = 'AU' . (isset($sco->id) ? $sco->id : uniqid());
-            $title = '';
-            if (isset($sco->title) && trim($sco->title) !== '') {
-                $title = trim($sco->title);
-            } elseif (isset($sco->name) && trim($sco->name) !== '') {
-                $title = trim($sco->name);
-            } else {
+            $id = $sco->id ?? '';
+            if ($id === '' || $id === null) {
+                continue;
+            }
+            $auid = 'AU' . $id;
+            $system_id = $auid;
+            $title = $this->get_sco_title($sco);
+            if (empty($title)) {
                 $title = $auid;
             }
-            $content .= $auid . '=' . $this->escape_aicc($title) . "\r\n";
-        }
-        $content .= "\r\n";
-
-        // AU blocks
-        foreach ($this->scos as $sco) {
-            $auid = 'AU' . (isset($sco->id) ? $sco->id : uniqid());
-            $identifier = $auid;
-            $title = '';
-            if (isset($sco->title) && trim($sco->title) !== '') {
-                $title = trim($sco->title);
-            } elseif (isset($sco->name) && trim($sco->name) !== '') {
-                $title = trim($sco->name);
-            } else {
-                $title = $auid;
+            // Determine parent: if root, '/', else AU{parent_id}
+            $parent = '/';
+            if (!empty($sco->parent) && $sco->parent !== '/' && $sco->parent !== $sco->organization) {
+                if (isset($this->sco_identifier_map[$sco->parent])) {
+                    $parentid = $this->sco_identifier_map[$sco->parent];
+                    $parent = 'AU' . $parentid;
+                } elseif (isset($this->sco_id_map[$sco->parent])) {
+                    $parent = 'AU' . $sco->parent;
+                } else {
+                    $parent = $sco->parent;
+                }
             }
-            $file_name = $this->get_launch_url(isset($sco->id) ? $sco->id : 0);
-            $system_id = 'MoodleA';
-            $max_score = isset($this->scorm->maxgrade) && is_numeric($this->scorm->maxgrade) ? $this->scorm->maxgrade : 100;
+            $type = '';
+            $command_line = '';
+            $max_time_allowed = '';
+            $time_limit_action = '';
+            $file_name = $this->get_launch_url($sco->id);
+            $max_score = is_numeric($this->scorm->maxgrade ?? null) ? $this->scorm->maxgrade : '';
+            $mastery_score = $max_score;
+            $system_vendor = 'Moodle';
+            $core_vendor = '';
+            $web_launch = $file_name;
+            $au_password = '';
 
-            $content .= "[{$auid}]\r\n";
-            $content .= "Identifier=" . $this->escape_aicc($identifier) . "\r\n";
-            $content .= "Title=" . $this->escape_aicc($title) . "\r\n";
-            $content .= "File_Name=" . $this->escape_aicc($file_name) . "\r\n";
-            $content .= "System_ID=" . $this->escape_aicc($system_id) . "\r\n";
-            $content .= "Max_Score=" . $this->escape_aicc($max_score) . "\r\n";
-            $content .= "\r\n";
+            $row = [
+                $system_id,
+                $title,
+                $parent,
+                $type,
+                $command_line,
+                $max_time_allowed,
+                $time_limit_action,
+                $file_name,
+                $max_score,
+                $mastery_score,
+                $system_vendor,
+                $core_vendor,
+                $web_launch,
+                $au_password
+            ];
+            $row = array_map(function($v) {
+                return '"' . str_replace('"', '""', $v) . '"';
+            }, $row);
+            $rows[] = implode(',', $row);
         }
-        return $content;
+        return implode("\r\n", $rows);
     }
 
-    /**
-     * Escape AICC values for safe output (remove CR/LF, trim, fallback to empty string if null)
-     */
+    protected function get_sco_title($sco): string {
+        if (!empty(trim($sco->title ?? ''))) {
+            return trim($sco->title);
+        }
+        if (!empty(trim($sco->name ?? ''))) {
+            return trim($sco->name);
+        }
+        return 'AU' . $sco->id;
+    }
+
     protected function escape_aicc($value): string {
         if ($value === null) return '';
         $value = str_replace(["\r", "\n"], '', (string)$value);
@@ -122,7 +270,7 @@ class exporter {
 
     protected function get_launch_url(int $scoid): string {
         global $CFG;
-        $ttl = get_config('local_aicc_export', 'launch_token_ttl');
+        $ttl = get_config('local_aicc_export', 'launch_token_ttl') ?? 3600;
         $payload = [
             'au' => 'AU' . $scoid,
             'scormid' => $this->scorm->id,
@@ -133,7 +281,12 @@ class exporter {
             'nonce' => \core\uuid::generate(),
         ];
         $token = launcher::sign_token($payload);
-        $url = new \moodle_url('/local/aicc_export/launch.php', ['token' => $token]);
-        return $url->out(true);
+        $url = new \moodle_url('/local/aicc_export/launch.php', [
+            'token' => $token,
+            'scoid' => $scoid,
+        ]);
+
+        // Prevent &amp; encoding so AICC launcher gets proper parameters
+        return html_entity_decode($url->out(true), ENT_QUOTES);
     }
 }

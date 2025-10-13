@@ -15,11 +15,13 @@ if (!get_config('local_aicc_export', 'enabled')) {
     throw new \moodle_exception('error_plugin_disabled', 'local_aicc_export');
 }
 
-$exporter = new \local_aicc_export\exporter($course, $scorm);
-$zipfilepath = $exporter->generate_package();
 
-$filename = clean_filename($course->shortname) . '_aicc.zip';
-
-send_file($zipfilepath, $filename);
-
-unlink($zipfilepath);
+try {
+    $exporter = new \local_aicc_export\exporter($course, $scorm);
+    $zipfilepath = $exporter->generate_package();
+    $filename = clean_filename($course->shortname) . '_aicc.zip';
+    send_file($zipfilepath, $filename);
+    unlink($zipfilepath);
+} catch (Exception $e) {
+    print_error('export_failed', 'local_aicc_export', '', $e->getMessage());
+}
