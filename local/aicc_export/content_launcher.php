@@ -1,6 +1,7 @@
 <?php
 
 require_once(__DIR__ . '/../../config.php');
+require_once($CFG->dirroot.'/mod/scorm/locallib.php');
 
 // SCORM content launcher for external LMS systems
 // This serves the actual SCORM content and sets up HACP communication
@@ -62,9 +63,9 @@ if (!empty($session_id)) {
     redirect($aicc_url);
 } else {
     // This is a content launch request
-    // Redirect to SCORM content
-    $scorm_url = new \moodle_url('/mod/scorm/view.php', [
+    // Redirect to direct SCORM content (bypasses Moodle navigation completely)
+    $direct_url = new \moodle_url('/local/aicc_export/direct_content.php', [
         'id' => $cmid
     ]);
-    redirect($scorm_url);
+    redirect($direct_url);
 }
