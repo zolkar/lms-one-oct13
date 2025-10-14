@@ -17,7 +17,7 @@ if (!get_config('local_aicc_export', 'enabled')) {
 
 
 try {
-    $exporter = new \local_aicc_export\exporter($course, $scorm);
+    $exporter = new \local_aicc_export\course_exporter($course, $scorm);
     $zipfilepath = $exporter->generate_package();
     $filename = clean_filename($course->shortname) . '_aicc.zip';
     send_file($zipfilepath, $filename);

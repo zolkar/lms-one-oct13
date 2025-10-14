@@ -6,6 +6,35 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/launcher.php');
 
 
+class course_exporter extends exporter {
+    public function __construct(\stdClass $course, \stdClass $scorm) {
+        parent::__construct($course, $scorm);
+    }
+
+    public function generate_package(): string {
+        $zip = new \ZipArchive();
+        $zipfilename = tempnam(sys_get_temp_dir(), 'aicc_export_') . '.zip';
+
+        if ($zip->open($zipfilename, \ZipArchive::CREATE) !== TRUE) {
+            throw new \moodle_exception('error_zip_create', 'local_aicc_export');
+        }
+
+        $basefilename = clean_filename($this->course->shortname);
+
+        // Always generate all 7 AICC files, even if empty.
+        $zip->addFromString($basefilename . '.crs', $this->get_crs_content());
+        $zip->addFromString($basefilename . '.cst', $this->get_cst_content());
+        $zip->addFromString($basefilename . '.des', $this->get_des_content());
+        $zip->addFromString($basefilename . '.au', $this->get_au_content());
+        $zip->addFromString($basefilename . '.ort', $this->get_ort_content());
+        $zip->addFromString($basefilename . '.pre', $this->get_pre_content());
+        $zip->addFromString($basefilename . '.cmp', $this->get_cmp_content());
+
+        $zip->close();
+        return $zipfilename;
+    }
+}
+
 class exporter {
     /**
      * @var array<int,object> Map of SCO id to SCO object
@@ -75,45 +104,26 @@ class exporter {
 
     protected function get_crs_content(): string {
         $content  = "[Course]\r\n";
-        $content .= "Course_ID=COURSE-{$this->course->id}\r\n";
-        $content .= "Course_Title=" . $this->escape_aicc($this->course->fullname) . "\r\n";
-        $content .= "Version=" . get_config('local_aicc_export', 'default_aicc_version') . "\r\n";
-        $content .= "Course_Date=" . date('Y-m-d') . "\r\n";
-        $content .= "Level=1\r\n";
-        $content .= "Language=en\r\n";
-        $content .= "Company=Moodle\r\n";
-        $content .= "Description=" . $this->escape_aicc($this->course->summary ?? '') . "\r\n";
+        $content .= "Course_ID = {$this->course->id}\r\n";
+        $content .= "Course_Title = " . $this->escape_aicc($this->course->fullname) . "\r\n";
+        $content .= "Course_Level = 1\r\n";
+        $content .= "Max_Normal = 1\r\n";
+        $content .= "Version = 1.0\r\n";
+        $content .= "Total_AUs = " . count($this->scos) . "\r\n";
+        $content .= "Mastery_Score = " . ($this->scorm->masteryscore ?? '') . "\r\n";
+        $content .= "Course_Description = " . $this->escape_aicc($this->course->summary ?? '') . "\r\n";
+        $content .= "\r\n[CORE_VENDOR]\r\n";
+        $content .= "Moodle\r\n";
         return $content;
     }
 
     protected function get_cst_content(): string {
-        // CSV-style CST file, no trailing blank line, skip invalid AUs
-        $header = [
-            'block_id', 'block_title', 'block_type', 'parent_block_id', 'au_list'
-        ];
-        $rows = [];
-        $rows[] = '"' . implode('","', $header) . '"';
-        $au_list = implode(',', array_filter(array_map(function($sco) {
-            $id = $sco->id ?? '';
-            return ($id !== '' && $id !== null) ? 'AU' . $id : '';
-        }, $this->scos)));
-        if (empty($au_list)) {
-            return implode("\r\n", $rows);
+        $content = "Block,Title,Type,Parent,AU\r\n";
+        foreach ($this->scos as $sco) {
+            $parent = ($sco->parent === '/') ? '' : 'B' . $this->sco_identifier_map[$sco->parent];
+            $content .= "B{$sco->id},\"{$sco->title}\",N,{$parent},AU{$sco->id}\r\n";
         }
-        $block_id = 'B1';
-        $block_title = 'Course Content';
-        $block_type = 'Normal';
-        $parent_block_id = '';
-        $row = [
-            $block_id,
-            $block_title,
-            $block_type,
-            $parent_block_id,
-            $au_list
-        ];
-        $row = array_map(function($v) { return '"' . str_replace('"', '""', $v) . '"'; }, $row);
-        $rows[] = implode(',', $row);
-        return implode("\r\n", $rows);
+        return $content;
     }
 
     protected function get_des_content(): string {
@@ -252,6 +262,19 @@ class exporter {
         return implode("\r\n", $rows);
     }
 
+    protected function get_ort_content(): string {
+        return "[Objectives]\r\n";
+    }
+
+    // Empty .pre file with correct section header.
+    protected function get_pre_content(): string {
+        return "[Prerequisites]\r\n";
+    }
+
+    // Empty .cmp file with correct section header.
+    protected function get_cmp_content(): string {
+        return "[Completion]\r\n";
+    }
     protected function get_sco_title($sco): string {
         if (!empty(trim($sco->title ?? ''))) {
             return trim($sco->title);

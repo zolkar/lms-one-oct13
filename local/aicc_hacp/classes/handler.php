@@ -44,13 +44,7 @@ class handler {
         $attempt = scorm_get_last_attempt($scorm->id, $user->id);
         $tracks = scorm_get_tracks($sco->id, $user->id, $attempt);
 
-        $aicc_data = "[Core]\r\n";
-        if (isset($tracks['cmi.core.lesson_status'])) {
-            $aicc_data .= "Lesson_Status={$tracks['cmi.core.lesson_status']->value}\r\n";
-        }
-        if (isset($tracks['cmi.core.lesson_location'])) {
-            $aicc_data .= "Lesson_Location={$tracks['cmi.core.lesson_location']->value}\r\n";
-        }
+        $aicc_data = mapper::scorm_to_aicc($tracks);
 
         return ['code' => 0, 'text' => 'Successful', 'data' => $aicc_data];
     }
@@ -78,12 +72,7 @@ class handler {
 
         $attempt = scorm_get_last_attempt($scorm->id, $user->id);
 
-        $track_details = [
-            'cmi.core.lesson_status' => $parsed_data['Core']['Lesson_Status'] ?? null,
-            'cmi.core.score.raw' => $parsed_data['Core']['Score'] ?? null,
-            'cmi.core.lesson_location' => $parsed_data['Core']['Lesson_Location'] ?? null,
-            'cmi.core.session_time' => $parsed_data['Core']['Time'] ?? null,
-        ];
+        $track_details = mapper::aicc_to_scorm($parsed_data);
 
         foreach ($track_details as $element => $value) {
             if ($value !== null) {
