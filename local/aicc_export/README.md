@@ -75,10 +75,11 @@ The exported package contains **descriptor files only** with a simplified struct
 The package generates URLs that point directly to Moodle's AICC handler (`/mod/scorm/aicc.php`) with proper HACP session management:
 
 - **HACP URLs**: `https://yoursite.com/local/aicc_export/content_launcher.php?id=activityid`
-- **Content Access**: Serves actual SCORM content without requiring login
+- **Content Access**: Serves actual SCORM content without requiring login via direct content launcher
 - **HACP Communication**: Handles both content display and protocol communication
 - **Session Management**: Creates sessions in `scorm_aicc_session` table for external LMS communication
 - **No Login Required**: Students access content seamlessly without creating accounts on host LMS
+- **Clean Display**: External LMS sees only SCORM content without Moodle navigation or branding
 - **Seamless Communication**: External LMS communicates with host LMS via HACP protocol for tracking and data exchange
 
 ## Troubleshooting
