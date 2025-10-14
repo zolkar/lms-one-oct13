@@ -58,17 +58,18 @@ The exported package contains **descriptor files only**:
 
 ### AICC Package Structure
 
-The exported package contains **descriptor files only** with a simplified structure:
+The exported package contains **descriptor files only** with HACP URLs:
 
 - **Course files (.crs)**: Course metadata and information (Total_AUs = 1)
 - **Structure files (.cst)**: Empty structure file (header only) to avoid parsing errors
-- **Descriptor files (.des)**: Single AU1 element with HACP launch URL to SCORM activity
-- **Assignable Unit files (.au)**: Identical to DES file (AU1 definition with HACP URL)
+- **Descriptor files (.des)**: Single AU1 element pointing to embedded SCORM content
+- **Assignable Unit files (.au)**: Identical to DES file (AU1 definition with embedded content)
+- **SCORM Content**: All SCORM files embedded in `scorm_content/` folder
 - **Objective files (.ort)**: Learning objectives (empty but properly formatted)
 - **Prerequisite files (.pre)**: Prerequisites (empty but properly formatted)
 - **Completion files (.cmp)**: Completion requirements (empty but properly formatted)
 
-**Important**: The package creates a single AU1 element that launches SCORM activities via HACP. This allows seamless communication between external LMS and host Moodle site without requiring student login.
+**Important**: The package now includes the actual SCORM content files embedded within it. External LMS systems can display the content directly without needing to connect back to the host Moodle site.
 
 ### HACP Integration
 

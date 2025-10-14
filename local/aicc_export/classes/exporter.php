@@ -33,7 +33,7 @@ class exporter {
 
         $basefilename = clean_filename($this->course->shortname);
 
-        // Generate AICC descriptor files with URLs pointing back to this LMS
+        // Generate AICC descriptor files with HACP URLs pointing to this LMS
         $zip->addFromString($basefilename . '.crs', $this->get_crs_content());
         $zip->addFromString($basefilename . '.cst', $this->get_cst_content());
         $zip->addFromString($basefilename . '.des', $this->get_des_content());
@@ -80,8 +80,8 @@ class exporter {
         // Create a single AU1 element that represents the course
         $title = $this->escape_aicc($this->course->fullname);
         
-        // For the launch URL, we'll create a simple course view URL
-        $launch_url = $this->get_course_launch_url();
+        // For the launch URL, point to HACP endpoint that serves SCORM content
+        $launch_url = $this->get_hacp_content_url();
 
         $row = [
             'AU1',
@@ -223,6 +223,40 @@ class exporter {
             $modurl = new \moodle_url('/mod/' . $activity->modname . '/view.php', ['id' => $activity->id]);
             return $modurl->out(false);
         }
+    }
+
+
+    protected function get_hacp_content_url(): string {
+        global $CFG;
+        
+        // Get SCORM activities in this course
+        $scorm_activities = array_filter($this->activities, function($activity) {
+            return $activity->modname === 'scorm';
+        });
+        
+        if (!empty($scorm_activities)) {
+            // Use the first SCORM activity for HACP content serving
+            $scorm_activity = reset($scorm_activities);
+            
+            // Point to HACP endpoint that will serve SCORM content
+            $hacp_url = new \moodle_url('/local/aicc_hacp/endpoint.php', [
+                'action' => 'launch',
+                'courseid' => $this->course->id,
+                'activityid' => $scorm_activity->id
+            ]);
+            
+            // Force HTTP for local development (remove this in production)
+            $url_string = $hacp_url->out(false);
+            $url_string = str_replace('https://', 'http://', $url_string);
+            return $url_string;
+        }
+        
+        // Fallback to course URL if no SCORM activities
+        $courseurl = new \moodle_url('/course/view.php', ['id' => $this->course->id]);
+        $url_string = $courseurl->out(false);
+        // Force HTTP for local development (remove this in production)
+        $url_string = str_replace('https://', 'http://', $url_string);
+        return $url_string;
     }
 
     protected function escape_aicc($value): string {
