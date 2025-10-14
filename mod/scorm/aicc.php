@@ -108,6 +108,7 @@ if (!empty($command)) {
                     if ($usertrack = scorm_get_tracks($scoid, $aiccuser->id, $attempt)) {
                         $userdata = $usertrack;
                     } else {
+                        $userdata = new \stdClass();
                         $userdata->status = '';
                         $userdata->score_raw = '';
                     }

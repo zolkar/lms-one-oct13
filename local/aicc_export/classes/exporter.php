@@ -6,33 +6,21 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/launcher.php');
 
 class exporter {
-    /**
-     * @var array<int,object> Map of SCO id to SCO object
-     */
-    protected $sco_id_map = [];
-    /**
-     * @var array<string,int> Map of SCO identifier to SCO id
-     */
-    protected $sco_identifier_map = [];
-
     protected $course;
-    protected $scorm;
-    protected $scos;
+    protected $activities;
 
-    public function __construct(\stdClass $course, \stdClass $scorm) {
+    public function __construct(\stdClass $course) {
         global $DB;
         $this->course = $course;
-        $this->scorm = $scorm;
-        $this->scos = $DB->get_records('scorm_scoes', ['scorm' => $this->scorm->id], 'id');
-        // Build a map of id => sco and identifier => id for parent/child mapping.
-        $this->sco_id_map = [];
-        $this->sco_identifier_map = [];
-        foreach ($this->scos as $sco) {
-            $this->sco_id_map[$sco->id] = $sco;
-            if (!empty($sco->identifier)) {
-                $this->sco_identifier_map[$sco->identifier] = $sco->id;
-            }
-        }
+        
+        // Get all activities in the course that can be exported as AICC
+        $this->activities = $DB->get_records_sql("
+            SELECT cm.id, cm.instance, m.name as modname, m.id as moduleid
+            FROM {course_modules} cm
+            JOIN {modules} m ON m.id = cm.module
+            WHERE cm.course = ? AND m.name IN ('scorm', 'resource', 'page', 'lesson', 'quiz')
+            ORDER BY cm.section, cm.id
+        ", [$course->id]);
     }
 
     public function generate_package(): string {
@@ -45,7 +33,7 @@ class exporter {
 
         $basefilename = clean_filename($this->course->shortname);
 
-        // Always generate all 7 AICC files, even if empty.
+        // Generate AICC descriptor files with URLs pointing back to this LMS
         $zip->addFromString($basefilename . '.crs', $this->get_crs_content());
         $zip->addFromString($basefilename . '.cst', $this->get_cst_content());
         $zip->addFromString($basefilename . '.des', $this->get_des_content());
@@ -65,10 +53,7 @@ class exporter {
         $content .= "Course_Level = 1\r\n";
         $content .= "Max_Normal = 1\r\n";
         $content .= "Version = " . (get_config('local_aicc_export', 'default_aicc_version') ?: '4.0') . "\r\n";
-        $content .= "Total_AUs = " . count($this->scos) . "\r\n";
-        if (!empty($this->scorm->masteryscore)) {
-            $content .= "Mastery_Score = " . $this->scorm->masteryscore . "\r\n";
-        }
+        $content .= "Total_AUs = 1\r\n";
         if (!empty($this->course->summary)) {
             $content .= "Course_Description = " . $this->escape_aicc($this->course->summary) . "\r\n";
         }
@@ -78,12 +63,9 @@ class exporter {
     }
 
     protected function get_cst_content(): string {
+        // Create an empty CST file with just the header
+        // This avoids the parsing error where CST tries to set parent on null elements
         $content = "Block,Title,Type,Parent,AU\r\n";
-        foreach ($this->scos as $sco) {
-            $parent = ($sco->parent === '/') ? '' : 'B' . $sco->parent;
-            $title = $this->escape_aicc($this->get_sco_title($sco));
-            $content .= "B{$sco->id},\"{$title}\",N,{$parent},AU{$sco->id}\r\n";
-        }
         return $content;
     }
 
@@ -95,186 +77,152 @@ class exporter {
         $rows = [];
         $rows[] = '"' . implode('","', $header) . '"';
         
-        foreach ($this->scos as $sco) {
-            $auid = 'AU' . $sco->id;
-            $title = $this->escape_aicc($this->get_sco_title($sco));
-            
-            // Determine parent
-            $parent = '/';
-            if (!empty($sco->parent) && $sco->parent !== '/' && $sco->parent !== $sco->organization) {
-                $parent = 'AU' . $sco->parent;
-            }
-            
-            // Get launch file - use the actual SCORM content file
-            $file_name = $this->get_launch_file($sco);
-            
-            $max_score = '';
-            $mastery_score = '';
-            if (!empty($this->scorm->maxgrade) && is_numeric($this->scorm->maxgrade)) {
-                $max_score = $this->scorm->maxgrade;
-                $mastery_score = $this->scorm->maxgrade;
-            }
+        // Create a single AU1 element that represents the course
+        $title = $this->escape_aicc($this->course->fullname);
+        
+        // For the launch URL, we'll create a simple course view URL
+        $launch_url = $this->get_course_launch_url();
 
-            $row = [
-                $auid,
-                $title,
-                $parent,
-                '', // type
-                '', // command_line
-                '', // Max_Time_Allowed
-                '', // time_limit_action
-                $file_name,
-                $max_score,
-                $mastery_score,
-                'Moodle', // system_vendor
-                '', // core_vendor
-                $file_name, // web_launch
-                '' // AU_password
-            ];
-            
-            $row = array_map(function($v) {
-                return '"' . str_replace('"', '""', $v) . '"';
-            }, $row);
-            $rows[] = implode(',', $row);
-        }
+        $row = [
+            'AU1',
+            $title,
+            '/', // parent
+            '', // type
+            '', // command_line
+            '', // Max_Time_Allowed
+            '', // time_limit_action
+            $launch_url, // file_name - URL
+            '', // max_score
+            '', // mastery_score
+            'Moodle', // system_vendor
+            '', // core_vendor
+            $launch_url, // web_launch - URL
+            '' // AU_password
+        ];
+        
+        $row = array_map(function($v) {
+            return '"' . str_replace('"', '""', $v) . '"';
+        }, $row);
+        $rows[] = implode(',', $row);
+        
         return implode("\r\n", $rows);
     }
 
     protected function get_au_content(): string {
-        $header = [
-            'system_id', 'title', 'parent', 'type', 'command_line', 'Max_Time_Allowed', 'time_limit_action',
-            'file_name', 'max_score', 'mastery_score', 'system_vendor', 'core_vendor', 'web_launch', 'AU_password'
-        ];
-        $rows = [];
-        $rows[] = '"' . implode('","', $header) . '"';
-
-        foreach ($this->scos as $sco) {
-            $auid = 'AU' . $sco->id;
-            $title = $this->escape_aicc($this->get_sco_title($sco));
-            
-            // Determine parent
-            $parent = '/';
-            if (!empty($sco->parent) && $sco->parent !== '/' && $sco->parent !== $sco->organization) {
-                $parent = 'AU' . $sco->parent;
-            }
-            
-            // Get launch file - use the actual SCORM content file
-            $file_name = $this->get_launch_file($sco);
-            
-            $max_score = '';
-            $mastery_score = '';
-            if (!empty($this->scorm->maxgrade) && is_numeric($this->scorm->maxgrade)) {
-                $max_score = $this->scorm->maxgrade;
-                $mastery_score = $this->scorm->maxgrade;
-            }
-
-            $row = [
-                $auid,
-                $title,
-                $parent,
-                '', // type
-                '', // command_line
-                '', // Max_Time_Allowed
-                '', // time_limit_action
-                $file_name,
-                $max_score,
-                $mastery_score,
-                'Moodle', // system_vendor
-                '', // core_vendor
-                $file_name, // web_launch
-                '' // AU_password
-            ];
-            
-            $row = array_map(function($v) {
-                return '"' . str_replace('"', '""', $v) . '"';
-            }, $row);
-            $rows[] = implode(',', $row);
-        }
-        return implode("\r\n", $rows);
+        // AU file is typically identical to DES file for simple AICC packages
+        return $this->get_des_content();
     }
 
     protected function get_ort_content(): string {
         return "[Objectives]\r\n";
     }
 
-    // Empty .pre file with correct section header.
     protected function get_pre_content(): string {
         return "[Prerequisites]\r\n";
     }
 
-    // Empty .cmp file with correct section header.
     protected function get_cmp_content(): string {
         return "[Completion]\r\n";
     }
-    protected function get_sco_title($sco): string {
-        if (!empty(trim($sco->title ?? ''))) {
-            return trim($sco->title);
+
+    protected function get_activity_title($activity): string {
+        global $DB;
+        
+        // Get the actual activity name based on module type
+        switch ($activity->modname) {
+            case 'scorm':
+                $scorm = $DB->get_record('scorm', ['id' => $activity->instance]);
+                return $scorm ? $scorm->name : 'SCORM Activity';
+            case 'resource':
+                $resource = $DB->get_record('resource', ['id' => $activity->instance]);
+                return $resource ? $resource->name : 'Resource';
+            case 'page':
+                $page = $DB->get_record('page', ['id' => $activity->instance]);
+                return $page ? $page->name : 'Page';
+            case 'lesson':
+                $lesson = $DB->get_record('lesson', ['id' => $activity->instance]);
+                return $lesson ? $lesson->name : 'Lesson';
+            case 'quiz':
+                $quiz = $DB->get_record('quiz', ['id' => $activity->instance]);
+                return $quiz ? $quiz->name : 'Quiz';
+            default:
+                return 'Activity ' . $activity->id;
         }
-        if (!empty(trim($sco->name ?? ''))) {
-            return trim($sco->name);
-        }
-        return 'AU' . $sco->id;
     }
 
-    protected function get_launch_file($sco): string {
-        // For AICC packages, we need to reference the actual content files
-        // The launch file should be the main entry point of the SCORM content
-        if (!empty($sco->launch)) {
-            return $sco->launch;
-        }
-        
-        // If no specific launch file, try to find the main content file
-        // This could be index.html, start.html, or similar
-        $common_files = ['index.html', 'start.html', 'main.html', 'course.html'];
-        foreach ($common_files as $file) {
-            if ($this->file_exists_in_scorm($file)) {
-                return $file;
-            }
-        }
-        
-        // Fallback to the first HTML file found
-        $html_files = $this->get_html_files_from_scorm();
-        if (!empty($html_files)) {
-            return $html_files[0];
-        }
-        
-        return 'index.html'; // Default fallback
-    }
-
-    protected function file_exists_in_scorm($filename): bool {
+    protected function get_course_launch_url(): string {
         global $CFG;
         
-        if (!isset($this->scorm->cmid)) {
-            $cm = get_coursemodule_from_instance('scorm', $this->scorm->id);
-            $this->scorm->cmid = $cm->id;
-        }
-        $context = \context_module::instance($this->scorm->cmid);
-        $fs = get_file_storage();
+        // Create AICC HACP URL that points to a SCORM activity in this course
+        // This allows seamless communication without requiring student login
+        $scorm_activities = array_filter($this->activities, function($activity) {
+            return $activity->modname === 'scorm';
+        });
         
-        $file = $fs->get_file($context->id, 'mod_scorm', 'content', 0, '/', $filename);
-        return $file !== false;
+        if (!empty($scorm_activities)) {
+            // Use the first SCORM activity for HACP communication
+            $scorm_activity = reset($scorm_activities);
+            return $this->get_hacp_launch_url($scorm_activity);
+        } else {
+            // If no SCORM activities, create a simple course URL
+            // But this won't work with HACP - need SCORM for proper AICC communication
+            $courseurl = new \moodle_url('/course/view.php', ['id' => $this->course->id]);
+            return $courseurl->out(false);
+        }
     }
-
-    protected function get_html_files_from_scorm(): array {
+    
+    protected function get_hacp_launch_url($activity): string {
         global $CFG;
         
-        if (!isset($this->scorm->cmid)) {
-            $cm = get_coursemodule_from_instance('scorm', $this->scorm->id);
-            $this->scorm->cmid = $cm->id;
+        // Point to our content launcher that serves SCORM content without login
+        $content_url = new \moodle_url('/local/aicc_export/content_launcher.php', [
+            'id' => $activity->id
+        ]);
+        
+        return $content_url->out(false);
+    }
+    
+    protected function create_hacp_session($session_id, $activity): void {
+        global $DB;
+        
+        // Get the SCORM instance
+        $scorm = $DB->get_record('scorm', ['id' => $activity->instance], '*', MUST_EXIST);
+        
+        // Create AICC session record for HACP communication
+        $aicc_session = new \stdClass();
+        $aicc_session->hacpsession = $session_id;
+        $aicc_session->scormid = $scorm->id;
+        $aicc_session->userid = 0; // External user - will be set by HACP
+        $aicc_session->timecreated = time();
+        $aicc_session->timemodified = time();
+        
+        // Check if session already exists
+        $existing = $DB->get_record('scorm_aicc_session', ['hacpsession' => $session_id]);
+        if ($existing) {
+            $aicc_session->id = $existing->id;
+            $aicc_session->timemodified = time();
+            $DB->update_record('scorm_aicc_session', $aicc_session);
+        } else {
+            $DB->insert_record('scorm_aicc_session', $aicc_session);
         }
-        $context = \context_module::instance($this->scorm->cmid);
-        $fs = get_file_storage();
+    }
+
+    protected function get_launch_url($activity): string {
+        global $CFG;
         
-        $files = $fs->get_area_files($context->id, 'mod_scorm', 'content', 0, 'sortorder, itemid, filepath, filename', false);
-        $html_files = [];
-        
-        foreach ($files as $file) {
-            if (!$file->is_directory() && preg_match('/\.html?$/i', $file->get_filename())) {
-                $html_files[] = $file->get_filename();
-            }
+        // For SCORM activities, use the AICC handler directly
+        if ($activity->modname === 'scorm') {
+            // Create URL that points to Moodle's AICC handler
+            $aicc_url = new \moodle_url('/mod/scorm/aicc.php', [
+                'command' => 'getparam',
+                'session_id' => 'HACP_SESSION_' . $activity->id
+            ]);
+            return $aicc_url->out(false);
+        } else {
+            // For other activities, create a simple launch URL
+            $modurl = new \moodle_url('/mod/' . $activity->modname . '/view.php', ['id' => $activity->id]);
+            return $modurl->out(false);
         }
-        
-        return $html_files;
     }
 
     protected function escape_aicc($value): string {
@@ -282,58 +230,14 @@ class exporter {
         $value = str_replace(["\r", "\n"], '', (string)$value);
         return trim($value);
     }
-
 }
 
 class course_exporter extends exporter {
-    public function __construct(\stdClass $course, \stdClass $scorm) {
-        parent::__construct($course, $scorm);
+    public function __construct(\stdClass $course) {
+        parent::__construct($course);
     }
 
     public function generate_package(): string {
-        $zip = new \ZipArchive();
-        $zipfilename = tempnam(sys_get_temp_dir(), 'aicc_export_') . '.zip';
-
-        if ($zip->open($zipfilename, \ZipArchive::CREATE) !== TRUE) {
-            throw new \moodle_exception('error_zip_create', 'local_aicc_export');
-        }
-
-        $basefilename = clean_filename($this->course->shortname);
-
-        // Generate AICC descriptor files
-        $zip->addFromString($basefilename . '.crs', $this->get_crs_content());
-        $zip->addFromString($basefilename . '.cst', $this->get_cst_content());
-        $zip->addFromString($basefilename . '.des', $this->get_des_content());
-        $zip->addFromString($basefilename . '.au', $this->get_au_content());
-        $zip->addFromString($basefilename . '.ort', $this->get_ort_content());
-        $zip->addFromString($basefilename . '.pre', $this->get_pre_content());
-        $zip->addFromString($basefilename . '.cmp', $this->get_cmp_content());
-
-        // Add actual SCORM content files
-        $this->add_scorm_content($zip);
-
-        $zip->close();
-        return $zipfilename;
-    }
-
-    protected function add_scorm_content(\ZipArchive $zip): void {
-        global $CFG;
-        
-        if (!isset($this->scorm->cmid)) {
-            $cm = get_coursemodule_from_instance('scorm', $this->scorm->id);
-            $this->scorm->cmid = $cm->id;
-        }
-        $context = \context_module::instance($this->scorm->cmid);
-        $fs = get_file_storage();
-        
-        // Get all files from the SCORM content area
-        $files = $fs->get_area_files($context->id, 'mod_scorm', 'content', 0, 'sortorder, itemid, filepath, filename', false);
-        
-        foreach ($files as $file) {
-            if (!$file->is_directory()) {
-                $filepath = $file->get_filepath() . $file->get_filename();
-                $zip->addFromString($filepath, $file->get_content());
-            }
-        }
+        return parent::generate_package();
     }
 }
