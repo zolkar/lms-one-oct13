@@ -17,20 +17,7 @@ $cm = get_coursemodule_from_instance('scorm', $scorm->id, $course->id, false, MU
 
 require_login($course, true, $cm);
 
-$session = new \stdClass();
-$session->session_id = \core\uuid::generate();
-$session->token_nonce = $payload['nonce'];
-$session->scormid = $scorm->id;
-$session->scoid = $payload['scoid'];
-$session->courseid = $course->id;
-$session->au = $payload['au'];
-$session->status = 'active';
-$session->created_at = $payload['issued_at'];
-$session->expires_at = $payload['expires_at'];
-$session->last_activity_at = time();
-$session->origin = $_SERVER['HTTP_REFERER'] ?? '';
-
-$DB->insert_record('local_aicc_export_sessions', $session);
-
-$scorm_url = new moodle_url('/mod/scorm/player.php', ['id' => $cm->id, 'remote_session' => $session->session_id]);
+// For exported AICC packages, we redirect directly to the SCORM player
+// The AICC package should contain all necessary content files
+$scorm_url = new moodle_url('/mod/scorm/player.php', ['id' => $cm->id]);
 redirect($scorm_url);

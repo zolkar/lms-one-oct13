@@ -1,5 +1,3 @@
-$string['error_missing_token_secret'] = 'AICC launch token secret is not configured. Please contact your administrator.';
-$string['export_failed'] = 'AICC export failed: {$a}';
 <?php
 
 defined('MOODLE_INTERNAL') || die();
@@ -24,3 +22,7 @@ $string['error_course_not_found'] = 'Course not found.';
 $string['error_scorm_not_found'] = 'SCORM activity not found.';
 $string['error_not_entitled'] = 'You are not authorized to perform this action.';
 $string['error_plugin_disabled'] = 'The AICC Export plugin is disabled.';
+$string['error_missing_token_secret'] = 'AICC launch token secret is not configured. Please contact your administrator.';
+$string['export_failed'] = 'AICC export failed: {$a}';
+$string['error_zip_create'] = 'Failed to create ZIP file for export.';
+$string['export_description'] = 'This will export the selected SCORM activity as a complete AICC package that can be imported into other LMS systems. The package will include all course content and files.';

@@ -1,6 +1,7 @@
 <?php
 
 require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/classes/exporter.php');
 
 $courseid = required_param('courseid', PARAM_INT);
 $scormid = required_param('scormid', PARAM_INT);

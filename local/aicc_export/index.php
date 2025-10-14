@@ -28,7 +28,7 @@ if (empty($scorms)) {
 
 echo '<h2>' . get_string('select_scorm', 'local_aicc_export') . '</h2>';
 echo '<div style="margin-bottom:1em;color:#666;font-size:0.95em;">'
-    . 'Note: This export will generate AICC descriptor files (.crs, .cst, .des, .au) referencing the selected SCORM activity. The actual SCORM content is not included in the package. The exported AICC package will launch the SCORM activity hosted on this Moodle site from another LMS.'
+    . get_string('export_description', 'local_aicc_export')
     . '</div>';
 echo '<form action="export.php" method="post">';
 echo '<input type="hidden" name="courseid" value="' . $course->id . '">';
