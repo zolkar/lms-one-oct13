@@ -201,20 +201,42 @@ $resource_rewrite_script = '
     var originalXHRSend = XMLHttpRequest.prototype.send;
     
     var baseUrl = "' . $base_url . '";
+    var currentUrl = window.location.href;
+    var basePath = "/lms-one/local/aicc_export/";
+    
+    function rewriteUrl(url) {
+        if (typeof url === "string") {
+            // Handle relative URLs (no protocol, no leading slash)
+            if (!url.startsWith("http") && !url.startsWith("/")) {
+                return baseUrl + url;
+            }
+            // Handle absolute URLs that point to our export directory
+            if (url.startsWith(basePath)) {
+                var relativePath = url.substring(basePath.length);
+                return baseUrl + relativePath;
+            }
+            // Handle URLs that start with /lms-one/local/aicc_export/ (absolute paths)
+            if (url.startsWith("/lms-one/local/aicc_export/")) {
+                var relativePath = url.substring("/lms-one/local/aicc_export/".length);
+                return baseUrl + relativePath;
+            }
+        }
+        return url;
+    }
     
     // Rewrite fetch requests
     window.fetch = function(url, options) {
-        if (typeof url === "string" && !url.startsWith("http") && !url.startsWith("/")) {
-            url = baseUrl + url;
-        }
+        console.log("Fetch request:", url);
+        url = rewriteUrl(url);
+        console.log("Rewritten to:", url);
         return originalFetch.call(this, url, options);
     };
     
     // Rewrite XMLHttpRequest requests
     XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
-        if (typeof url === "string" && !url.startsWith("http") && !url.startsWith("/")) {
-            url = baseUrl + url;
-        }
+        console.log("XHR request:", url);
+        url = rewriteUrl(url);
+        console.log("XHR rewritten to:", url);
         return originalXHROpen.call(this, method, url, async, user, password);
     };
     
@@ -225,14 +247,26 @@ $resource_rewrite_script = '
         if (tagName.toLowerCase() === "script" || tagName.toLowerCase() === "link") {
             var originalSetAttribute = element.setAttribute;
             element.setAttribute = function(name, value) {
-                if ((name === "src" || name === "href") && typeof value === "string" && !value.startsWith("http") && !value.startsWith("/")) {
-                    value = baseUrl + value;
+                if (name === "src" || name === "href") {
+                    value = rewriteUrl(value);
                 }
                 return originalSetAttribute.call(this, name, value);
             };
         }
         return element;
     };
+    
+    // Also intercept img src changes
+    var originalImageSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (originalImageSrc) {
+        Object.defineProperty(HTMLImageElement.prototype, "src", {
+            get: originalImageSrc.get,
+            set: function(value) {
+                value = rewriteUrl(value);
+                return originalImageSrc.set.call(this, value);
+            }
+        });
+    }
 })();
 </script>';
 
