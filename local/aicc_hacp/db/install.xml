@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/aicc_hacp/db" VERSION="2025101300" COMMENT="XMLDB file for local_aicc_hacp plugin">
+<XMLDB PATH="local/aicc_hacp/db" VERSION="2025011500" COMMENT="XMLDB file for local_aicc_hacp plugin">
   <TABLES>
     <TABLE NAME="local_aicc_hacp_logs" COMMENT="Logs for AICC HACP requests">
       <FIELDS>
@@ -41,10 +41,30 @@
         <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="'active'"/>
         <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="last_activity_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="student_id" TYPE="char" LENGTH="100" NOTNULL="false"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
         <KEY NAME="session_id_uk" TYPE="unique" FIELDS="session_id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="local_aicc_hacp_student_state" COMMENT="Student state storage for AICC HACP">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="student_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
+        <FIELD NAME="scormid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="scoid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="state_data" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="lesson_status" TYPE="char" LENGTH="50" NOTNULL="false"/>
+        <FIELD NAME="lesson_location" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="score" TYPE="char" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="session_time" TYPE="char" LENGTH="20" NOTNULL="false"/>
+        <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="updated_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="student_scorm_uk" TYPE="unique" FIELDS="student_id, scormid, scoid"/>
       </KEYS>
     </TABLE>
   </TABLES>

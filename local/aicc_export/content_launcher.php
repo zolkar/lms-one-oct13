@@ -1,71 +1,37 @@
 <?php
 
-require_once(__DIR__ . '/../../config.php');
-require_once($CFG->dirroot.'/mod/scorm/locallib.php');
-
-// SCORM content launcher for external LMS systems
+// Standalone SCORM content launcher for external LMS systems
 // This serves the actual SCORM content and sets up HACP communication
 
-$cmid = required_param('id', PARAM_INT);
-$session_id = optional_param('session_id', '', PARAM_ALPHANUM);
-
-// Get the course module
-$cm = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
-$course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
-
-// Verify it's a SCORM activity
-if ($cm->modname !== 'scorm') {
-    print_error('error_non_scorm_hacp', 'local_aicc_export');
+// Get parameters
+$cmid = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$session_id = isset($_GET['session_id']) ? $_GET['session_id'] : '';
+$command = isset($_GET['command']) ? $_GET['command'] : 'getparam';
+$student_id = isset($_GET['AICC_SID']) ? $_GET['AICC_SID'] : '';
+if (empty($student_id)) {
+    $student_id = isset($_GET['student_id']) ? $_GET['student_id'] : '';
 }
 
-$scorm = $DB->get_record('scorm', ['id' => $cm->instance], '*', MUST_EXIST);
-
-// Create or get HACP user for content access
-function get_or_create_hacp_user() {
-    global $DB;
-    
-    // Look for existing HACP user
-    $hacp_user = $DB->get_record('user', ['username' => 'hacp_user'], 'id');
-    if ($hacp_user) {
-        return $hacp_user->id;
-    }
-    
-    // Create new HACP user
-    $user = new \stdClass();
-    $user->username = 'hacp_user';
-    $user->firstname = 'HACP';
-    $user->lastname = 'User';
-    $user->email = 'hacp@localhost';
-    $user->confirmed = 1;
-    $user->mnethostid = 1;
-    $user->timecreated = time();
-    $user->timemodified = time();
-    
-    $userid = $DB->insert_record('user', $user);
-    return $userid;
+if (!$cmid) {
+    http_response_code(400);
+    echo "Error: Missing course module ID";
+    exit;
 }
 
-// Set the HACP user as the current user (for content access)
-$hacp_user_id = get_or_create_hacp_user();
-$USER = $DB->get_record('user', ['id' => $hacp_user_id], '*', MUST_EXIST);
-
-// Set up the course context
-$context = \context_course::instance($course->id);
-
-// If this is an AICC HACP request (has session_id), handle it
+// If this is a HACP communication request (has session_id), redirect to HACP endpoint
 if (!empty($session_id)) {
-    // This is a HACP communication request
-    // Redirect to AICC handler for protocol communication
-    $aicc_url = new \moodle_url('/mod/scorm/aicc.php', [
-        'command' => 'getparam',
-        'session_id' => $session_id
-    ]);
-    redirect($aicc_url);
-} else {
-    // This is a content launch request
-    // Redirect to direct SCORM content (bypasses Moodle navigation completely)
-    $direct_url = new \moodle_url('/local/aicc_export/direct_content.php', [
-        'id' => $cmid
-    ]);
-    redirect($direct_url);
+    $hacp_url = '/lms-one/local/aicc_hacp/endpoint.php?command=' . urlencode($command) . '&session_id=' . urlencode($session_id);
+    if (!empty($student_id)) {
+        $hacp_url .= '&AICC_SID=' . urlencode($student_id);
+    }
+    header('Location: ' . $hacp_url);
+    exit;
 }
+
+// This is a content launch request - redirect to SCORM content server
+$scorm_content_url = '/lms-one/local/aicc_export/scorm_content_server.php?id=' . $cmid;
+if (!empty($student_id)) {
+    $scorm_content_url .= '&student_id=' . urlencode($student_id);
+}
+header('Location: ' . $scorm_content_url);
+exit;

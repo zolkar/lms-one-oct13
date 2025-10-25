@@ -7,6 +7,7 @@ require_once($CFG->dirroot.'/mod/scorm/locallib.php');
 // This bypasses Moodle's player interface and serves content directly
 
 define('NO_MOODLE_PAGE', true);
+define('NO_OUTPUT_BUFFERING', true);
 
 $cmid = required_param('id', PARAM_INT);
 $session_id = optional_param('session_id', '', PARAM_ALPHANUM);
@@ -19,8 +20,6 @@ error_log("cmid: " . $cmid);
 error_log("session_id: " . $session_id);
 error_log("command: " . $command);
 error_log("student_id: " . $student_id);
-error_log("All GET params: " . print_r($_GET, true));
-error_log("All POST params: " . print_r($_POST, true));
 
 // Get the course module
 $cm = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
@@ -82,7 +81,7 @@ if (empty($scoes)) {
     echo "Error: No SCO found in SCORM activity";
     exit;
 }
-$sco = reset($scoes); // Get the first (and only) record
+$sco = reset($scoes);
 
 // Create or update AICC session record for HACP communication
 $aicc_session = new \stdClass();
@@ -109,68 +108,25 @@ if ($existing) {
     $aicc_session->id = $existing->id;
     $aicc_session->last_activity_at = time();
     try {
-        // Debug: Log the session data before update
-        error_log("AICC Export - Attempting to update session:");
-        error_log("Session data: " . print_r($aicc_session, true));
-        
         $DB->update_record('local_aicc_export_sessions', $aicc_session);
-        error_log("AICC Export - Successfully updated session");
-        
     } catch (Exception $e) {
         error_log("AICC Export DB Update Error: " . $e->getMessage());
-        error_log("AICC Export DB Update Details: " . print_r($aicc_session, true));
-        error_log("AICC Export DB Update Trace: " . $e->getTraceAsString());
         http_response_code(500);
         echo "Error: Database update failed - " . $e->getMessage();
         exit;
     }
 } else {
-    // All required fields are already set above
-    // session_id, scormid, scoid, userid, student_id, status, created_at, last_activity_at
-    
     try {
-        // Debug: Log the session data before insertion
-        error_log("AICC Export - Attempting to insert session:");
-        error_log("Session data: " . print_r($aicc_session, true));
-        
         $id = $DB->insert_record('local_aicc_export_sessions', $aicc_session);
-        error_log("AICC Export - Successfully inserted session with ID: " . $id);
-        
     } catch (Exception $e) {
         error_log("AICC Export DB Error: " . $e->getMessage());
-        error_log("AICC Export DB Error Details: " . print_r($aicc_session, true));
-        error_log("AICC Export DB Error Trace: " . $e->getTraceAsString());
         http_response_code(500);
         echo "Error: Database insertion failed - " . $e->getMessage();
         exit;
     }
 }
 
-// Instead of using an iframe, serve the SCORM content directly
-// This completely bypasses Moodle's interface
-
-// Get the SCORM package file
-$fs = get_file_storage();
-$files = $fs->get_area_files($context_module->id, 'mod_scorm', 'package', 0, 'id', false);
-if (empty($files)) {
-    http_response_code(404);
-    echo "Error: SCORM package not found";
-    exit;
-}
-$package_file = reset($files);
-
-// Extract the SCORM package to get the content
-$package_path = $package_file->get_content_filepath();
-if (!$package_path) {
-    http_response_code(404);
-    echo "Error: SCORM package file not accessible";
-    exit;
-}
-
-// For now, let's create a simple content launcher that doesn't use iframe
-// This will serve just the SCORM content without any Moodle interface
-
-// Serve minimal HTML page with direct SCORM content
+// Serve a minimal SCORM content page without any Moodle interface
 header('Content-Type: text/html; charset=UTF-8');
 ?>
 <!DOCTYPE html>
@@ -186,95 +142,73 @@ header('Content-Type: text/html; charset=UTF-8');
             font-family: Arial, sans-serif;
             background-color: #f5f5f5;
         }
-        .scorm-container {
+        .scorm-content {
             width: 100%;
             height: 100vh;
-            border: none;
             background-color: white;
-        }
-        .loading {
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
-            height: 100vh;
-            background-color: white;
-        }
-        .loading-text {
-            font-size: 16px;
-            color: #666;
-        }
-        .error {
-            display: flex;
             justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: white;
-            color: #d32f2f;
+        }
+        .content-info {
+            text-align: center;
+            padding: 20px;
+            background-color: #e3f2fd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            max-width: 600px;
+        }
+        .hacp-info {
+            background-color: #f3e5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .student-id {
+            font-weight: bold;
+            color: #1976d2;
         }
     </style>
 </head>
 <body>
-    <div class="loading" id="loading">
-        <div class="loading-text">Loading SCORM content...</div>
+    <div class="scorm-content">
+        <div class="content-info">
+            <h2><?php echo format_string($scorm->name); ?></h2>
+            <p>SCORM Content Ready for External LMS</p>
+            <?php if (!empty($student_id)): ?>
+                <p>Student ID: <span class="student-id"><?php echo htmlspecialchars($student_id); ?></span></p>
+            <?php endif; ?>
+            <p>SCO: <?php echo htmlspecialchars($sco->title ?? $sco->identifier ?? 'Unknown'); ?></p>
+        </div>
+        
+        <div class="hacp-info">
+            <h3>HACP Communication Setup</h3>
+            <p><strong>Session ID:</strong> <?php echo $aicc_session->session_id; ?></p>
+            <p><strong>HACP Endpoint:</strong> /local/aicc_hacp/endpoint.php</p>
+            <p><strong>Commands:</strong> getparam, putparam, exitau</p>
+            <p><strong>Status:</strong> Ready for SCORM content communication</p>
+        </div>
     </div>
-    
-    <div class="error" id="error" style="display: none;">
-        <div>Unable to load SCORM content. Please check that the SCORM package is properly configured.</div>
-    </div>
-    
-    <iframe id="scorm-frame" 
-            class="scorm-container" 
-            src="<?php echo $scorm_content_url; ?>" 
-            frameborder="0"
-            style="display: none;"
-            onerror="showError()">
-    </iframe>
 
     <script>
-        // HACP communication setup
-        var hacpBaseUrl = '<?php echo $hacp_base_url; ?>';
+        // HACP communication functions for SCORM content
+        var hacpEndpoint = '/local/aicc_hacp/endpoint.php';
+        var sessionId = '<?php echo $aicc_session->session_id; ?>';
+        var studentId = '<?php echo htmlspecialchars($student_id); ?>';
         
-        function showError() {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('scorm-frame').style.display = 'none';
-            document.getElementById('error').style.display = 'flex';
-        }
-        
-        // Hide loading and show content when iframe loads
-        document.getElementById('scorm-frame').onload = function() {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('scorm-frame').style.display = 'block';
-            
-            // Set up HACP communication for SCORM content
-            try {
-                var scormFrame = document.getElementById('scorm-frame');
-                if (scormFrame.contentWindow && scormFrame.contentWindow.API) {
-                    // Set HACP URLs for SCORM content
-                    scormFrame.contentWindow.API.hacpBaseUrl = hacpBaseUrl;
-                }
-            } catch (e) {
-                console.log('Could not set up HACP communication:', e);
-            }
-        };
-        
-        // Fallback: show content after 5 seconds even if onload doesn't fire
-        setTimeout(function() {
-            if (document.getElementById('loading').style.display !== 'none') {
-                showError();
-            }
-        }, 5000);
-        
-        // Global HACP communication functions for SCORM content
-        window.hacpGetParam = function(studentId) {
-            var url = hacpBaseUrl + '&command=getparam';
+        // Global HACP communication functions
+        window.hacpGetParam = function() {
+            var url = hacpEndpoint + '?command=getparam&session_id=' + sessionId;
             if (studentId) {
                 url += '&AICC_SID=' + encodeURIComponent(studentId);
             }
             return url;
         };
         
-        window.hacpPutParam = function(studentId, aiccData) {
-            var url = hacpBaseUrl + '&command=putparam';
+        window.hacpPutParam = function(aiccData) {
+            var url = hacpEndpoint + '?command=putparam&session_id=' + sessionId;
             if (studentId) {
                 url += '&AICC_SID=' + encodeURIComponent(studentId);
             }
@@ -283,6 +217,19 @@ header('Content-Type: text/html; charset=UTF-8');
             }
             return url;
         };
+        
+        window.hacpExitAu = function() {
+            var url = hacpEndpoint + '?command=exitau&session_id=' + sessionId;
+            if (studentId) {
+                url += '&AICC_SID=' + encodeURIComponent(studentId);
+            }
+            return url;
+        };
+        
+        console.log('HACP Communication Ready');
+        console.log('Session ID:', sessionId);
+        console.log('Student ID:', studentId);
+        console.log('HACP Functions: hacpGetParam(), hacpPutParam(data), hacpExitAu()');
     </script>
 </body>
 </html>

@@ -29,22 +29,25 @@ class handler {
             return ['code' => 103, 'text' => 'Session not found', 'data' => ''];
         }
 
-        $student_id = $parsed_data['Core']['Student_ID'] ?? '';
+        $student_id = $parsed_data['Core']['Student_ID'] ?? $session->student_id ?? '';
         if (empty($student_id)) {
             return ['code' => 100, 'text' => 'Missing Student_ID', 'data' => ''];
         }
 
-        $user = mapper::find_user_by_studentid($student_id);
-        if (!$user) {
-            return ['code' => 104, 'text' => 'User mapping failed', 'data' => ''];
+        // Get stored state for this student
+        $state = $DB->get_record('local_aicc_hacp_student_state', [
+            'student_id' => $student_id,
+            'scormid' => $session->scormid,
+            'scoid' => $session->scoid
+        ]);
+
+        if ($state) {
+            // Return stored state data
+            $aicc_data = self::build_aicc_data_from_state($state);
+        } else {
+            // No stored state, return default values
+            $aicc_data = self::get_default_aicc_data($student_id);
         }
-
-        $scorm = $DB->get_record('scorm', ['id' => $session->scormid], '*', MUST_EXIST);
-        $sco = $DB->get_record('scorm_scoes', ['id' => $session->scoid], '*', MUST_EXIST);
-        $attempt = scorm_get_last_attempt($scorm->id, $user->id);
-        $tracks = scorm_get_tracks($sco->id, $user->id, $attempt);
-
-        $aicc_data = mapper::scorm_to_aicc($tracks);
 
         return ['code' => 0, 'text' => 'Successful', 'data' => $aicc_data];
     }
@@ -57,30 +60,42 @@ class handler {
             return ['code' => 103, 'text' => 'Session not found', 'data' => ''];
         }
 
-        $student_id = $parsed_data['Core']['Student_ID'] ?? '';
+        $student_id = $parsed_data['Core']['Student_ID'] ?? $session->student_id ?? '';
         if (empty($student_id)) {
             return ['code' => 100, 'text' => 'Missing Student_ID', 'data' => ''];
         }
 
-        $user = mapper::find_user_by_studentid($student_id);
-        if (!$user) {
-            return ['code' => 104, 'text' => 'User mapping failed', 'data' => ''];
+        // Store or update student state
+        $state = $DB->get_record('local_aicc_hacp_student_state', [
+            'student_id' => $student_id,
+            'scormid' => $session->scormid,
+            'scoid' => $session->scoid
+        ]);
+
+        if ($state) {
+            // Update existing state
+            $state->state_data = json_encode($parsed_data);
+            $state->lesson_status = $parsed_data['Core']['Lesson_Status'] ?? $state->lesson_status;
+            $state->lesson_location = $parsed_data['Core']['Lesson_Location'] ?? $state->lesson_location;
+            $state->score = $parsed_data['Core']['Score'] ?? $state->score;
+            $state->session_time = $parsed_data['Core']['Time'] ?? $state->session_time;
+            $state->updated_at = time();
+            $DB->update_record('local_aicc_hacp_student_state', $state);
+        } else {
+            // Create new state record
+            $state = new \stdClass();
+            $state->student_id = $student_id;
+            $state->scormid = $session->scormid;
+            $state->scoid = $session->scoid;
+            $state->state_data = json_encode($parsed_data);
+            $state->lesson_status = $parsed_data['Core']['Lesson_Status'] ?? '';
+            $state->lesson_location = $parsed_data['Core']['Lesson_Location'] ?? '';
+            $state->score = $parsed_data['Core']['Score'] ?? '';
+            $state->session_time = $parsed_data['Core']['Time'] ?? '';
+            $state->created_at = time();
+            $state->updated_at = time();
+            $DB->insert_record('local_aicc_hacp_student_state', $state);
         }
-
-        $scorm = $DB->get_record('scorm', ['id' => $session->scormid], '*', MUST_EXIST);
-        $sco = $DB->get_record('scorm_scoes', ['id' => $session->scoid], '*', MUST_EXIST);
-
-        $attempt = scorm_get_last_attempt($scorm->id, $user->id);
-
-        $track_details = mapper::aicc_to_scorm($parsed_data);
-
-        foreach ($track_details as $element => $value) {
-            if ($value !== null) {
-                scorm_insert_track($user->id, $scorm->id, $sco->id, $attempt, $element, $value);
-            }
-        }
-
-        scorm_update_grades($scorm, $user->id);
 
         return ['code' => 0, 'text' => 'Successful', 'data' => ''];
     }
@@ -97,5 +112,62 @@ class handler {
         $DB->update_record('local_aicc_export_sessions', $session);
 
         return ['code' => 0, 'text' => 'Successful', 'data' => ''];
+    }
+
+    private static function build_aicc_data_from_state($state): string {
+        $aicc_sections = [];
+        
+        // Core section
+        $core_data = [
+            'Student_ID' => $state->student_id,
+            'Student_Name' => $state->student_id, // Use student_id as name if no name available
+            'Lesson_Location' => $state->lesson_location,
+            'Lesson_Status' => $state->lesson_status,
+            'Score' => $state->score,
+            'Time' => $state->session_time,
+            'Credit' => 'credit'
+        ];
+        
+        $core_section = '';
+        foreach ($core_data as $key => $value) {
+            if (!empty($value)) {
+                $core_section .= "{$key}={$value}\r\n";
+            }
+        }
+        
+        if (!empty($core_section)) {
+            $aicc_sections['Core'] = $core_section;
+        }
+        
+        // Core_Lesson section (suspend data)
+        if (!empty($state->state_data)) {
+            $parsed_data = json_decode($state->state_data, true);
+            if (isset($parsed_data['Core_Lesson'])) {
+                $aicc_sections['Core_Lesson'] = '';
+                foreach ($parsed_data['Core_Lesson'] as $key => $value) {
+                    $aicc_sections['Core_Lesson'] .= "{$key}={$value}\r\n";
+                }
+            }
+        }
+        
+        // Build final AICC string
+        $aicc_string = '';
+        foreach ($aicc_sections as $section => $data) {
+            $aicc_string .= "[{$section}]\r\n{$data}";
+        }
+        
+        return $aicc_string;
+    }
+
+    private static function get_default_aicc_data(string $student_id): string {
+        $core_section = "Student_ID={$student_id}\r\n";
+        $core_section .= "Student_Name={$student_id}\r\n";
+        $core_section .= "Lesson_Location=\r\n";
+        $core_section .= "Lesson_Status=not attempted\r\n";
+        $core_section .= "Score=\r\n";
+        $core_section .= "Time=00:00:00\r\n";
+        $core_section .= "Credit=credit\r\n";
+        
+        return "[Core]\r\n{$core_section}";
     }
 }
