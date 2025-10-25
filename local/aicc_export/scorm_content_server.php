@@ -276,8 +276,37 @@ $html_content = preg_replace('/<head[^>]*>/i', '$0<base href="' . $base_url . '"
 // Create session ID for HACP communication
 $session_id = 'SCORM_' . $cmid . '_' . time();
 
+// Create session record in database for HACP tracking
+try {
+    $session_record = new \stdClass();
+    $session_record->session_id = $session_id;
+    $session_record->scormid = $scorm->id;
+    $session_record->scoid = $sco->id;
+    $session_record->userid = 0; // External student, not Moodle user
+    $session_record->status = 'active';
+    $session_record->created_at = time();
+    $session_record->last_activity_at = time();
+    $session_record->student_id = $student_id;
+    
+    $stmt = $db->prepare("INSERT INTO mdl_local_aicc_export_sessions (session_id, scormid, scoid, userid, status, created_at, last_activity_at, student_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([
+        $session_record->session_id,
+        $session_record->scormid,
+        $session_record->scoid,
+        $session_record->userid,
+        $session_record->status,
+        $session_record->created_at,
+        $session_record->last_activity_at,
+        $session_record->student_id
+    ]);
+    
+    error_log("Created HACP session: " . $session_id . " for student: " . $student_id . " SCORM: " . $scorm->id . " SCO: " . $sco->id);
+} catch (Exception $e) {
+    error_log("Failed to create HACP session: " . $e->getMessage());
+}
+
 // Set up HACP communication URL for the SCORM content
-$hacp_base_url = '/lms-one/local/aicc_export/content_launcher.php?id=' . $cmid . '&session_id=' . $session_id;
+$hacp_base_url = '/lms-one/local/aicc_export/hacp_standalone.php?session_id=' . $session_id;
 
 // Create base URL for file requests
 $file_base_url = '/lms-one/local/aicc_export/scorm_content_server.php?id=' . $cmid;
