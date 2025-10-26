@@ -13,14 +13,24 @@ class exporter {
         global $DB;
         $this->course = $course;
         
-        // Get all activities in the course that can be exported as AICC
-        $this->activities = $DB->get_records_sql("
-            SELECT cm.id, cm.instance, m.name as modname, m.id as moduleid
-            FROM {course_modules} cm
-            JOIN {modules} m ON m.id = cm.module
-            WHERE cm.course = ? AND m.name IN ('scorm', 'resource', 'page', 'lesson', 'quiz')
-            ORDER BY cm.section, cm.id
-        ", [$course->id]);
+        // Get all SCORM activities in the course
+        try {
+            $this->activities = $DB->get_records_sql("
+                SELECT cm.id, cm.instance, m.name as modname, m.id as moduleid
+                FROM {course_modules} cm
+                JOIN {modules} m ON m.id = cm.module AND m.name = 'scorm'
+                WHERE cm.course = ? AND cm.deletioninprogress = 0
+                ORDER BY cm.section, cm.id
+            ", [$course->id]);
+            
+            // If no SCORM activities found, throw error
+            if (empty($this->activities)) {
+                throw new \moodle_exception('no_scorms_in_course', 'local_aicc_export');
+            }
+        } catch (\dml_exception $e) {
+            error_log('AICC Export database error: ' . $e->getMessage());
+            throw new \moodle_exception('error_reading_database', 'local_aicc_export', '', $e->getMessage());
+        }
     }
 
     public function generate_package(): string {

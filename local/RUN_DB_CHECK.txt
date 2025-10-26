@@ -1,0 +1,87 @@
+# How to Check Database Directly
+
+## Option 1: Check tables via MySQL command line
+
+Run these commands:
+
+```bash
+# Connect to database container
+docker exec -it mariadb_moodle bash
+
+# Login to MySQL
+mysql -u root -pexample lms_one
+
+# Then run these SQL queries one by one:
+
+# 1. Check if course 9 exists
+SELECT id, shortname, fullname FROM mdl_course WHERE id = 9;
+
+# 2. Check context for course 9
+SELECT * FROM mdl_context WHERE instanceid = 9 AND contextlevel = 50;
+
+# 3. Check course modules
+SELECT cm.id, cm.instance, m.name, cm.deletioninprogress
+FROM mdl_course_modules cm
+JOIN mdl_modules m ON m.id = cm.module
+WHERE cm.course = 9;
+
+# 4. Check sections
+SELECT * FROM mdl_course_sections WHERE course = 9;
+
+# 5. List all tables
+SHOW TABLES;
+
+# 6. Check if AICC tables exist
+SHOW TABLES LIKE 'mdl_local_aicc%';
+
+# 7. Count records in key tables
+SELECT 'course' as table_name, COUNT(*) as count FROM mdl_course
+UNION ALL
+SELECT 'course_modules', COUNT(*) FROM mdl_course_modules
+UNION ALL
+SELECT 'modules', COUNT(*) FROM mdl_modules
+UNION ALL
+SELECT 'context', COUNT(*) FROM mdl_context;
+
+# Exit MySQL
+exit
+exit
+```
+
+## Option 2: Run the PHP diagnostic script
+
+```bash
+docker exec -it apache_8 bash
+cd /var/www/html/lms-one
+php local/check_db_direct.php
+```
+
+This will connect directly to MySQL and check all tables.
+
+## Option 3: Check via bash script
+
+```bash
+chmod +x local/check_database_tables.sh
+bash local/check_database_tables.sh
+```
+
+## What to look for:
+
+1. If course 9 exists ✓
+2. If context exists for course 9 ✓
+3. If any tables are missing (marked with ✗)
+4. If any modules are marked for deletion
+5. If AICC plugin tables exist
+
+## Common fixes:
+
+If tables are missing:
+```bash
+cd /var/www/html/lms-one
+php admin/cli/upgrade.php --non-interactive
+```
+
+If course modules are corrupted:
+```bash
+php admin/cli/rebuild_course_cache.php
+```
