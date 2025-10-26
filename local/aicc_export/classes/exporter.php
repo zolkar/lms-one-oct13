@@ -199,8 +199,9 @@ class exporter {
             'external_lms'
         );
         
-        // Debug: Log the token generation
-        error_log("AICC Export: Generated new token at " . time() . ": " . substr($token, 0, 50) . "...");
+        // Debug: Log the token generation  
+        error_log("AICC Export: Generating token at timestamp " . time() . " for course {$this->course->id}, scorm {$scorm->id}");
+        error_log("AICC Export: Token payload starts with: " . substr($token, 0, 50) . "...");
         
         // Point to our content launcher that serves SCORM content without login
         // This URL will be used by external LMS to launch content with a token

@@ -29,9 +29,17 @@ try {
         print_error('no_scorms_in_course', 'local_aicc_export');
     }
     
+    $export_timestamp = time();
+    error_log("=== Starting new AICC export at " . date('Y-m-d H:i:s', $export_timestamp) . " ===");
+    
     $exporter = new \local_aicc_export\course_exporter($course);
     $zipfilepath = $exporter->generate_package();
-    $filename = clean_filename($course->shortname) . '_aicc_' . time() . '.zip';
+    
+    // Check the file size
+    $filesize = filesize($zipfilepath);
+    error_log("Generated ZIP file size: {$filesize} bytes");
+    
+    $filename = clean_filename($course->shortname) . '_aicc_' . $export_timestamp . '.zip';
     
     // Prevent caching to ensure fresh token on each export
     header('Cache-Control: no-cache, no-store, must-revalidate');

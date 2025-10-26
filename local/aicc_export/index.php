@@ -98,6 +98,7 @@ try {
         echo '<p class="mt-3">Click the button below to export this course as an AICC package:</p>';
         echo '<form action="export.php" method="get" style="margin-top:1em;">';
         echo '<input type="hidden" name="courseid" value="' . $course->id . '">';
+        echo '<input type="hidden" name="timestamp" value="' . time() . '">'; // Cache buster
         echo '<button type="submit" class="btn btn-primary btn-lg"><i class="fa fa-download"></i> Export Course as AICC Package</button>';
         echo '</form>';
     }

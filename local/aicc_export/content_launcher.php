@@ -109,35 +109,30 @@ if (empty($student_id)) {
     }
 }
 
-// Try to extract name and email from AICC parameters (logged for debugging)
+// Try to extract name and email from various sources
 error_log("=== AICC Launch Parameters ===");
 error_log("GET params: " . print_r($_GET, true));
 error_log("POST params: " . print_r($_POST, true));
+error_log("SERVER vars: " . print_r(['HTTP_REFERER' => $_SERVER['HTTP_REFERER'] ?? 'N/A'], true));
 
+// Try multiple parameter names
 $student_name = optional_param('student_name', '', PARAM_TEXT);
 if (empty($student_name)) {
-    $student_name = optional_param('AICC_Student_Name', '', PARAM_TEXT);
+    $student_name = optional_param('name', '', PARAM_TEXT);
 }
 if (empty($student_name)) {
-    $student_name = optional_param('student_name', '', PARAM_TEXT);
+    $student_name = optional_param('fullname', '', PARAM_TEXT);
+}
+if (empty($student_name)) {
+    $student_name = optional_param('firstname', '', PARAM_TEXT);
 }
 
 $student_email = optional_param('student_email', '', PARAM_EMAIL);
 if (empty($student_email)) {
-    $student_email = optional_param('AICC_Student_Email', '', PARAM_EMAIL);
+    $student_email = optional_param('email', '', PARAM_EMAIL);
 }
 if (empty($student_email)) {
-    // Try to extract from AICC data
-    $aicc_data_param = optional_param('AICC_DATA', '', PARAM_RAW);
-    if (!empty($aicc_data_param)) {
-        // Parse AICC format
-        if (preg_match('/Student_Email=([^\|\\\]*)/i', $aicc_data_param, $matches)) {
-            $student_email = trim($matches[1]);
-        }
-        if (preg_match('/Student_Name=([^\|\\\]*)/i', $aicc_data_param, $matches)) {
-            $student_name = trim($matches[1]);
-        }
-    }
+    $student_email = optional_param('emailaddress', '', PARAM_EMAIL);
 }
 
 // If no email provided, generate one from student_id
@@ -318,98 +313,85 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
         var AICC_URL = "' . $hacp_url . '";
         var AICC_SID = "' . $student_id . '";
         
-        // Enhanced AICC API implementation
-        function LMSInitialize(parameter) {
-            try {
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", AICC_URL, false);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                
-                var data = "command=GetParam&AICC_SID=" + encodeURIComponent(AICC_SID);
-                xhr.send(data);
-                
-                if (xhr.status === 200) {
-                    console.log("LMSInitialize: " + xhr.responseText);
-                    return "true";
-                }
-            } catch (e) {
-                console.error("LMSInitialize error:", e);
-            }
-            return "true";
-        }
+        console.log("Initializing SCORM API for student: " + AICC_SID);
         
-        function LMSFinish(parameter) {
-            try {
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", AICC_URL, false);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                
-                var data = "command=ExitAU&AICC_SID=" + encodeURIComponent(AICC_SID);
-                xhr.send(data);
-                
-                console.log("LMSFinish: " + xhr.responseText);
+        // SCORM 1.2 API object
+        var API = {
+            LMSInitialize: function(param) {
+                console.log("LMSInitialize called with: " + param);
                 return "true";
-            } catch (e) {
-                console.error("LMSFinish error:", e);
-            }
-            return "true";
-        }
-        
-        function LMSGetValue(element) {
-            try {
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", AICC_URL, false);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                
-                var data = "command=GetParam&AICC_SID=" + encodeURIComponent(AICC_SID);
-                xhr.send(data);
-                
-                if (xhr.status === 200) {
-                    var response = xhr.responseText;
-                    // Parse the response to extract the value
-                    var regex = new RegExp("\\\\|" + element + "\\\\|?([^\\\\|]+)", "i");
-                    var match = response.match(regex);
-                    return match ? match[1] : "";
-                }
-            } catch (e) {
-                console.error("LMSGetValue error:", e);
-            }
-            return "";
-        }
-        
-        function LMSSetValue(element, value) {
-            try {
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", AICC_URL, false);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                
-                // Build AICC data
-                var aiccData = "Core\\\\";
-                aiccData += "Student_ID=" + AICC_SID + "\\\\";
-                aiccData += element + "=" + value + "\\\\";
-                
-                var data = "command=PutParam&AICC_SID=" + encodeURIComponent(AICC_SID) + "&AICC_DATA=" + encodeURIComponent(aiccData);
-                xhr.send(data);
-                
-                console.log("LMSSetValue: " + element + "=" + value);
+            },
+            
+            LMSFinish: function(param) {
+                console.log("LMSFinish called");
                 return "true";
-            } catch (e) {
-                console.error("LMSSetValue error:", e);
+            },
+            
+            LMSGetValue: function(element) {
+                console.log("LMSGetValue called for: " + element);
+                return "";
+            },
+            
+            LMSSetValue: function(element, value) {
+                console.log("LMSSetValue called: " + element + " = " + value);
+                
+                // Map SCORM elements to AICC
+                var aiccElement = element;
+                if (element === "cmi.core.lesson_status") {
+                    aiccElement = "Lesson_Status";
+                } else if (element === "cmi.core.score.raw") {
+                    aiccElement = "Score";
+                } else if (element === "cmi.core.session_time") {
+                    aiccElement = "Time";
+                } else if (element === "cmi.core.lesson_location") {
+                    aiccElement = "Lesson_Location";
+                }
+                
+                // Send to HACP endpoint
+                try {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open("POST", AICC_URL, false);
+                    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                    
+                    var aiccData = "Core\\n" +
+                        "Student_ID=" + AICC_SID + "\\n" +
+                        aiccElement + "=" + value + "\\n";
+                    
+                    var data = "command=PutParam&AICC_SID=" + encodeURIComponent(AICC_SID) + 
+                               "&AICC_DATA=" + encodeURIComponent(aiccData);
+                    
+                    xhr.send(data);
+                    console.log("Sent to HACP: " + data);
+                } catch (e) {
+                    console.error("Error sending to HACP:", e);
+                }
+                
+                return "true";
+            },
+            
+            LMSCommit: function(param) {
+                console.log("LMSCommit called");
+                return "true";
+            },
+            
+            LMSGetLastError: function() {
+                return "0";
+            },
+            
+            LMSGetErrorString: function(errorCode) {
+                return "No Error";
+            },
+            
+            LMSGetDiagnostic: function(errorCode) {
+                return "";
             }
-            return "true";
-        }
-        
-        function LMSCommit(comment) {
-            // Same as LMSSetValue but for committing all changes
-            return "true";
-        }
+        };
         
         // Make API available globally
-        window.LMSInitialize = LMSInitialize;
-        window.LMSFinish = LMSFinish;
-        window.LMSGetValue = LMSGetValue;
-        window.LMSSetValue = LMSSetValue;
-        window.LMSCommit = LMSCommit;
+        window.API = API;
+        window.API_0 = API;
+        
+        console.log("SCORM API initialized");
     </script>
     ';
     
