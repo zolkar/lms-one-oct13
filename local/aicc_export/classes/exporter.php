@@ -109,6 +109,9 @@ class exporter {
         ];
         
         $row = array_map(function($v) {
+            // Decode any HTML entities (like &amp;) to plain characters
+            $v = html_entity_decode($v, ENT_QUOTES, 'UTF-8');
+            // Proper CSV escaping: wrap in quotes and escape internal quotes
             return '"' . str_replace('"', '""', $v) . '"';
         }, $row);
         $rows[] = implode(',', $row);
@@ -215,7 +218,13 @@ class exporter {
                 'target_lms' => $CFG->wwwroot // Tell launcher where LMS-1 is
             ];
             
-            $content_url = $lms2_launcher_url . '?' . http_build_query($params);
+            // Build query string with proper ampersands (not HTML entities)
+            $query_parts = [];
+            foreach ($params as $key => $value) {
+                $query_parts[] = urlencode($key) . '=' . urlencode($value);
+            }
+            $query_string = implode('&', $query_parts);
+            $content_url = $lms2_launcher_url . '?' . $query_string;
             error_log("AICC Export: Using LMS-2 launcher: {$content_url}");
             return $content_url;
         } else {
