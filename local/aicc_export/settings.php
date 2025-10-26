@@ -11,7 +11,7 @@ if ($hassiteconfig) {
         'local_aicc_export/lms2_launcher_url',
         get_string('lms2_launcher_url', 'local_aicc_export'),
         get_string('lms2_launcher_url_desc', 'local_aicc_export'),
-        'http://localhost:8301/lms-two/local/aicc_use/launcher.php',
+        'http://localhost:8300/lms-two/local/aicc_use/launcher.php',
         PARAM_URL
     ));
     

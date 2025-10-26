@@ -32,12 +32,16 @@ echo $OUTPUT->header();
 // Get courses with SCORM activities that have external sessions
 $sql = "
     SELECT DISTINCT c.id, c.shortname, c.fullname, s.id as scormid, s.name as scormname,
+           cm.id as cmid,
            COUNT(DISTINCT hs.student_id) as external_students,
            COUNT(DISTINCT CASE WHEN hs.status = 'active' THEN hs.student_id END) as active_students
     FROM {course} c
     JOIN {scorm} s ON s.course = c.id
+    JOIN {course_modules} cm ON cm.instance = s.id AND cm.module = (
+        SELECT id FROM {modules} WHERE name = 'scorm' LIMIT 1
+    )
     LEFT JOIN {local_aicc_hacp_sessions} hs ON hs.scormid = s.id
-    GROUP BY c.id, c.shortname, c.fullname, s.id, s.name
+    GROUP BY c.id, c.shortname, c.fullname, s.id, s.name, cm.id
     HAVING external_students > 0
     ORDER BY c.shortname, s.name
 ";
@@ -55,9 +59,12 @@ if (empty($courses)) {
     // Show SCORM activities that could have external students
     echo html_writer::tag('h3', 'SCORM Activities Available for External Access');
     $scorm_sql = "
-        SELECT c.id, c.shortname, c.fullname, s.id as scormid, s.name as scormname
+        SELECT c.id, c.shortname, c.fullname, s.id as scormid, s.name as scormname, cm.id as cmid
         FROM {course} c
         JOIN {scorm} s ON s.course = c.id
+        JOIN {course_modules} cm ON cm.instance = s.id AND cm.module = (
+            SELECT id FROM {modules} WHERE name = 'scorm' LIMIT 1
+        )
         ORDER BY c.shortname, s.name
     ";
     
@@ -78,7 +85,7 @@ if (empty($courses)) {
         
         foreach ($scorm_activities as $activity) {
             $course_url = new moodle_url('/course/view.php', ['id' => $activity->id]);
-            $scorm_url = new moodle_url('/mod/scorm/view.php', ['id' => $activity->scormid]);
+            $scorm_url = new moodle_url('/mod/scorm/view.php', ['id' => $activity->cmid]);
             
             $table->data[] = [
                 html_writer::link($course_url, $activity->shortname),
@@ -123,7 +130,7 @@ $table->head = [
 
 foreach ($courses as $course) {
     $course_url = new moodle_url('/course/view.php', ['id' => $course->id]);
-    $scorm_url = new moodle_url('/mod/scorm/view.php', ['id' => $course->scormid]);
+    $scorm_url = new moodle_url('/mod/scorm/view.php', ['id' => $course->cmid]);
     $details_url = new moodle_url('/local/aicc_hacp/admin/student_details.php', [
         'courseid' => $course->id,
         'scormid' => $course->scormid
