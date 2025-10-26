@@ -77,6 +77,7 @@ class secure_auth {
     public static function validate_launch_token(string $token, int $cmid = 0): ?array {
         $secret = get_config('local_aicc_hacp', 'launch_token_secret');
         if (empty($secret)) {
+            error_log("No launch_token_secret configured");
             return null;
         }
         
@@ -85,26 +86,43 @@ class secure_auth {
         
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
+            error_log("Invalid token format - not 3 parts");
             return null;
         }
         
-        list($header, $payload, $signature) = $parts;
+        list($header, $payload, $signature_encoded) = $parts;
         
-        // Verify signature - decode from URL-safe base64
-        $signature_decoded = base64_decode(strtr($signature, '-_', '+/'));
+        // Try both URL-safe base64 and regular base64 for backward compatibility
+        $signature_decoded = false;
         $expected_signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
         
-        if (!hash_equals($signature_decoded, $expected_signature)) {
-            error_log("Token signature validation failed");
+        // Try URL-safe base64 first (new format)
+        $signature_decoded = @base64_decode(strtr($signature_encoded, '-_', '+/') . str_repeat('=', 4 - strlen($signature_encoded) % 4));
+        if ($signature_decoded && hash_equals($signature_decoded, $expected_signature)) {
+            // Valid with URL-safe
+        } else {
+            // Try regular base64 (old format)
+            $signature_decoded = @base64_decode($signature_encoded);
+            if (!$signature_decoded || !hash_equals($signature_decoded, $expected_signature)) {
+                error_log("Token signature validation failed - both formats tried");
+                return null;
+            }
+        }
+        
+        // Decode payload - try both formats
+        $payload_decoded = @base64_decode(strtr($payload, '-_', '+/') . str_repeat('=', 4 - strlen($payload) % 4));
+        if (!$payload_decoded) {
+            $payload_decoded = @base64_decode($payload);
+        }
+        
+        if (!$payload_decoded) {
+            error_log("Failed to decode token payload - both formats tried");
             return null;
         }
         
-        // Decode payload - handle URL-safe base64
-        $payload_decoded = base64_decode(strtr($payload, '-_', '+/'));
         $payload_data = json_decode($payload_decoded, true);
-        
         if (!$payload_data || !is_array($payload_data)) {
-            error_log("Failed to decode token payload");
+            error_log("Failed to decode token payload JSON");
             return null;
         }
         
@@ -114,6 +132,7 @@ class secure_auth {
             return null;
         }
         
+        error_log("Token validated successfully for scormid: " . ($payload_data['scormid'] ?? 'N/A'));
         return $payload_data;
     }
     
