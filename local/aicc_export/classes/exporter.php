@@ -203,16 +203,37 @@ class exporter {
         error_log("AICC Export: Generating token at timestamp " . time() . " for course {$this->course->id}, scorm {$scorm->id}");
         error_log("AICC Export: Token payload starts with: " . substr($token, 0, 50) . "...");
         
-        // Point to our content launcher that serves SCORM content without login
-        // This URL will be used by external LMS to launch content with a token
-        $content_url = new \moodle_url('/local/aicc_export/content_launcher.php', [
-            'id' => $activity->id,
-            'token' => $token
-        ]);
+        // Build the URL based on configuration
+        // If LMS-2 launcher URL is configured, use it
+        // Otherwise, use direct launch with placeholders
         
-        // Return absolute URL so external LMS can access it
-        // The URL will point to LMS-1's content launcher
-        return $content_url->out(true);
+        $lms2_launcher_url = get_config('local_aicc_export', 'lms2_launcher_url');
+        
+        if (!empty($lms2_launcher_url)) {
+            // Use LMS-2 launcher (recommended - sends real student data)
+            $params = [
+                'id' => $activity->id,
+                'token' => $token,
+                'target_lms' => $CFG->wwwroot // Tell launcher where LMS-1 is
+            ];
+            
+            $content_url = $lms2_launcher_url . '?' . http_build_query($params);
+            error_log("AICC Export: Using LMS-2 launcher: {$content_url}");
+            return $content_url;
+        } else {
+            // Direct launch with placeholders (fallback)
+            $content_url = new \moodle_url('/local/aicc_export/content_launcher.php', [
+                'id' => $activity->id,
+                'token' => $token,
+                'username' => '{{student.username}}',
+                'email' => '{{student.email}}',
+                'firstname' => '{{student.firstname}}',
+                'lastname' => '{{student.lastname}}'
+            ]);
+            
+            error_log("AICC Export: Using direct launch with placeholders");
+            return $content_url->out(true);
+        }
     }
     
     protected function get_launch_url($activity): string {

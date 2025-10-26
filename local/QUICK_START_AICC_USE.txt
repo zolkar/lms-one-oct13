@@ -1,0 +1,86 @@
+================================================================================
+QUICK START: AICC User Extension Plugin
+================================================================================
+
+WHAT THIS DOES:
+- Automatically sends real student info from LMS-2 to LMS-1
+- No more placeholders or manual .au file editing
+- Proper student emails instead of auto-generated ones
+
+FILES CREATED:
+├── local/aicc_use/
+│   ├── version.php              (Plugin definition)
+│   ├── launcher.php             (Main script that adds student data)
+│   ├── lang/en/local_aicc_use.php
+│   ├── README.txt
+│   └── INSTALL_GUIDE.md
+├── local/aicc_export/
+│   ├── classes/exporter.php     (Updated to support LMS-2 launcher)
+│   ├── settings.php             (Configuration page)
+│   └── lang/en/local_aicc_export.php (Updated strings)
+└── local/AICC_USE_SUMMARY.md   (Complete documentation)
+
+INSTALLATION:
+
+Step 1: Copy plugin to LMS-2
+--------------------------------
+Run this command:
+bash local/install_aicc_use.sh
+
+Or manually:
+cp -r local/aicc_use ../lms-two/local/
+docker exec apache_8 bash -c "chown -R www-data:www-data /var/www/html/lms-two/local/aicc_use"
+
+Step 2: Install on LMS-2
+--------------------------------
+1. Visit: http://localhost:8301/lms-two/admin/notifications.php
+2. Click "Upgrade Moodle database now"
+3. Wait for: "The aicc_use plugin has been installed"
+
+Step 3: Configure on LMS-1
+--------------------------------
+1. Visit: http://localhost:8300/lms-one/admin/settings.php?section=localplugins
+2. Find "AICC Export" settings
+3. Set "LMS-2 Launcher URL" to:
+   http://localhost:8301/lms-two/local/aicc_use/launcher.php
+4. Save changes
+
+Step 4: Re-export from LMS-1
+--------------------------------
+1. Visit: http://localhost:8300/lms-one/local/aicc_export/index.php?courseid=9
+2. Click "Export Course as AICC Package"
+3. Download the ZIP file
+
+Step 5: Import to LMS-2
+--------------------------------
+1. Go to LMS-2 course
+2. Add activity → SCORM/AICC
+3. Choose "Upload AICC package"
+4. Upload the new ZIP file
+
+Step 6: Test
+--------------------------------
+1. Login as a student on LMS-2
+2. Launch the SCORM activity
+3. Check logs:
+
+docker logs apache_8 2>&1 | grep "AICC USE" | tail -3
+
+Should show:
+AICC USE: Redirecting user john.doe (john@example.com) to http://localhost:8300/...
+
+4. Check database for real email:
+
+docker exec mariadb_moodle bash -c "mysql -u root -pexample lms_one -e 'SELECT student_id, student_name, student_email FROM mdl_local_aicc_hacp_persistent_sessions ORDER BY created_at DESC LIMIT 1;'"
+
+Should show actual student email, not external_student_...@external-lms.local
+
+================================================================================
+DONE!
+================================================================================
+
+For detailed instructions, see:
+- local/aicc_use/INSTALL_GUIDE.md
+- local/AICC_USE_SUMMARY.md
+- local/aicc_use/README.txt
+

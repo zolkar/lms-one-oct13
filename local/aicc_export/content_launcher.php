@@ -116,8 +116,25 @@ error_log("GET params: " . print_r($_GET, true));
 error_log("POST params: " . print_r($_POST, true));
 error_log("SERVER vars: " . print_r(['HTTP_REFERER' => $_SERVER['HTTP_REFERER'] ?? 'N/A'], true));
 
-// Try multiple parameter names
+// Try multiple parameter names - these come from the external LMS-2
+// Moodle SCORM passes: username, student_id, student_name, etc.
+// Check for both regular and HTML-encoded parameters (due to &amp; encoding)
+$username = optional_param('username', '', PARAM_TEXT);
+if (empty($username)) {
+    $username = optional_param('amp;username', '', PARAM_TEXT);
+}
+
+$student_email = optional_param('email', '', PARAM_EMAIL);
+if (empty($student_email)) {
+    $student_email = optional_param('amp;email', '', PARAM_EMAIL);
+}
+
 $student_name = optional_param('student_name', '', PARAM_TEXT);
+
+// Remove placeholder values (if LMS-2 didn't replace them)
+$username = str_replace(['{{student.username}}', '{student.username}'], '', $username);
+$student_email = str_replace(['{{student.email}}', '{student.email}'], '', $student_email);
+$student_name = str_replace(['{{student.name}}', '{student.name}'], '', $student_name);
 if (empty($student_name)) {
     $student_name = optional_param('name', '', PARAM_TEXT);
 }
@@ -125,21 +142,27 @@ if (empty($student_name)) {
     $student_name = optional_param('fullname', '', PARAM_TEXT);
 }
 if (empty($student_name)) {
-    $student_name = optional_param('firstname', '', PARAM_TEXT);
+    $firstname = optional_param('firstname', '', PARAM_TEXT);
+    $lastname = optional_param('lastname', '', PARAM_TEXT);
+    if (!empty($firstname) || !empty($lastname)) {
+        $student_name = trim($firstname . ' ' . $lastname);
+    }
 }
 
-$student_email = optional_param('student_email', '', PARAM_EMAIL);
+// Also check for Moodle's standard SCORM parameters
 if (empty($student_email)) {
-    $student_email = optional_param('email', '', PARAM_EMAIL);
+    $student_email = optional_param('student_email', '', PARAM_EMAIL);
 }
 if (empty($student_email)) {
     $student_email = optional_param('emailaddress', '', PARAM_EMAIL);
 }
 
-// If no email provided, generate one from student_id
+// If no email provided, generate one
 if (empty($student_email)) {
-    // Generate email from student_id or use a default
-    if (!empty($student_id)) {
+    if (!empty($username)) {
+        // Use username for email
+        $student_email = $username . '@external-lms.local';
+    } else if (!empty($student_id)) {
         // Use the student_id from AICC to create a unique email
         $student_email = str_replace([' ', '_'], '.', $student_id) . '@external-lms.local';
     } else {
@@ -149,7 +172,11 @@ if (empty($student_email)) {
 
 // Generate name if not provided
 if (empty($student_name)) {
-    $student_name = 'External Student ' . substr($student_id, 0, 10);
+    if (!empty($username)) {
+        $student_name = $username;
+    } else {
+        $student_name = 'External Student ' . substr($student_id, 0, 10);
+    }
 }
 
 // Create or get external user account
