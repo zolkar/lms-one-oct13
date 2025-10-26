@@ -67,7 +67,7 @@ if ($hassiteconfig) {
         'local_aicc_hacp/launch_token_ttl',
         get_string('setting_launch_token_ttl', 'local_aicc_hacp'),
         get_string('setting_launch_token_ttl_desc', 'local_aicc_hacp'),
-        3600,
+        86400,  // 24 hours
         PARAM_INT
     ));
 

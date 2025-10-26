@@ -109,9 +109,36 @@ if (empty($student_id)) {
     }
 }
 
-// Try to extract name and email from AICC parameters
+// Try to extract name and email from AICC parameters (logged for debugging)
+error_log("=== AICC Launch Parameters ===");
+error_log("GET params: " . print_r($_GET, true));
+error_log("POST params: " . print_r($_POST, true));
+
 $student_name = optional_param('student_name', '', PARAM_TEXT);
+if (empty($student_name)) {
+    $student_name = optional_param('AICC_Student_Name', '', PARAM_TEXT);
+}
+if (empty($student_name)) {
+    $student_name = optional_param('student_name', '', PARAM_TEXT);
+}
+
 $student_email = optional_param('student_email', '', PARAM_EMAIL);
+if (empty($student_email)) {
+    $student_email = optional_param('AICC_Student_Email', '', PARAM_EMAIL);
+}
+if (empty($student_email)) {
+    // Try to extract from AICC data
+    $aicc_data_param = optional_param('AICC_DATA', '', PARAM_RAW);
+    if (!empty($aicc_data_param)) {
+        // Parse AICC format
+        if (preg_match('/Student_Email=([^\|\\\]*)/i', $aicc_data_param, $matches)) {
+            $student_email = trim($matches[1]);
+        }
+        if (preg_match('/Student_Name=([^\|\\\]*)/i', $aicc_data_param, $matches)) {
+            $student_name = trim($matches[1]);
+        }
+    }
+}
 
 // If no email provided, generate one from student_id
 if (empty($student_email)) {

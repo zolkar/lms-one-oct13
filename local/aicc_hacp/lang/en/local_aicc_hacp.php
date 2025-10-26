@@ -55,3 +55,11 @@ $string['log_level_debug'] = 'Debug (All)';
 
 $string['progress_reset_success'] = 'Student progress has been reset successfully';
 $string['progress_reset_error'] = 'Error resetting student progress';
+$string['delete'] = 'Delete';
+$string['confirm_delete_student'] = 'Are you sure you want to delete this student and all their data? This action cannot be undone.';
+$string['student_deleted'] = 'Student has been deleted successfully';
+$string['error_deleting_student'] = 'Error deleting student';
+$string['view_logs'] = 'View Logs';
+$string['view_logs_desc'] = 'View AICC HACP request logs';
+$string['manual_mapping'] = 'Manual User Mapping';
+$string['manual_mapping_desc'] = 'Manually map external users to internal users';

@@ -11,6 +11,10 @@ require_login();
 $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 $scorm = $DB->get_record('scorm', ['id' => $scormid], '*', MUST_EXIST);
 
+// Get the course module for breadcrumb
+$cm = $DB->get_record('course_modules', ['instance' => $scormid, 'course' => $courseid], '*', MUST_EXIST);
+$actual_cmid = $cm->id;
+
 $context = context_course::instance($course->id);
 require_capability('moodle/course:view', $context);
 
@@ -21,7 +25,7 @@ $PAGE->set_heading(get_string('student_details', 'local_aicc_hacp'));
 
 // Breadcrumb
 $PAGE->navbar->add($course->shortname, new moodle_url('/course/view.php', ['id' => $courseid]));
-$PAGE->navbar->add($scorm->name, new moodle_url('/mod/scorm/view.php', ['id' => $scormid]));
+$PAGE->navbar->add($scorm->name, new moodle_url('/mod/scorm/view.php', ['id' => $actual_cmid]));
 $PAGE->navbar->add(get_string('external_students', 'local_aicc_hacp'));
 
 echo $OUTPUT->header();
@@ -115,6 +119,19 @@ foreach ($students as $student) {
         'onclick' => 'return confirm("' . get_string('confirm_reset_progress', 'local_aicc_hacp') . '")'
     ]);
     
+    $delete_url = new moodle_url('/local/aicc_hacp/admin/delete_student.php', [
+        'courseid' => $courseid,
+        'scormid' => $scormid,
+        'student_id' => $student->student_id,
+        'returnurl' => $PAGE->url->out(false)
+    ]);
+    $delete_link = html_writer::link($delete_url, get_string('delete', 'local_aicc_hacp'), [
+        'class' => 'btn btn-danger btn-sm',
+        'onclick' => 'return confirm("' . get_string('confirm_delete_student', 'local_aicc_hacp') . '")'
+    ]);
+    
+    $actions = $reset_link . ' ' . $delete_link;
+    
     $table->data[] = [
         $student->student_name ?: 'External Student',
         $student->student_email ?: '-',
@@ -125,7 +142,7 @@ foreach ($students as $student) {
         $student->session_time ?: '-',
         $last_activity,
         $status_badge,
-        $reset_link
+        $actions
     ];
 }
 
