@@ -43,11 +43,11 @@ $sql = "
         ps.student_email
     FROM {local_aicc_hacp_sessions} hs
     LEFT JOIN {local_aicc_hacp_student_state} ss ON (
-        ss.student_id = hs.student_id AND 
+        ss.student_id COLLATE utf8mb4_unicode_ci = hs.student_id AND 
         ss.scormid = hs.scormid AND 
         ss.scoid = hs.scoid
     )
-    LEFT JOIN {local_aicc_hacp_persistent_sessions} ps ON ps.student_id = hs.student_id
+    LEFT JOIN {local_aicc_hacp_persistent_sessions} ps ON ps.student_id COLLATE utf8mb4_unicode_ci = hs.student_id
     WHERE hs.scormid = ? AND hs.scoid = ?
     ORDER BY hs.last_activity_at DESC
 ";
