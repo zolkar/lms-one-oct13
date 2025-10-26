@@ -392,6 +392,15 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
         window.API_0 = API;
         
         console.log("SCORM API initialized");
+        
+        // Demo: Simulate progress after page load to test HACP
+        setTimeout(function() {
+            console.log("Demo: Simulating progress update...");
+            API.LMSSetValue("cmi.core.lesson_status", "incomplete");
+            API.LMSSetValue("cmi.core.lesson_location", "slide 1");
+            API.LMSSetValue("cmi.core.session_time", "00:00:10");
+            console.log("Demo: Progress updated");
+        }, 2000);
     </script>
     ';
     
