@@ -199,6 +199,9 @@ class exporter {
             'external_lms'
         );
         
+        // Debug: Log the token generation
+        error_log("AICC Export: Generated new token at " . time() . ": " . substr($token, 0, 50) . "...");
+        
         // Point to our content launcher that serves SCORM content without login
         // This URL will be used by external LMS to launch content with a token
         $content_url = new \moodle_url('/local/aicc_export/content_launcher.php', [

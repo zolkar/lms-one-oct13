@@ -31,7 +31,13 @@ try {
     
     $exporter = new \local_aicc_export\course_exporter($course);
     $zipfilepath = $exporter->generate_package();
-    $filename = clean_filename($course->shortname) . '_aicc.zip';
+    $filename = clean_filename($course->shortname) . '_aicc_' . time() . '.zip';
+    
+    // Prevent caching to ensure fresh token on each export
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+    
     send_file($zipfilepath, $filename);
     unlink($zipfilepath);
     
