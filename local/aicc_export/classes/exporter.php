@@ -3,8 +3,6 @@ namespace local_aicc_export;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once(__DIR__ . '/launcher.php');
-
 class exporter {
     protected $course;
     protected $activities;
