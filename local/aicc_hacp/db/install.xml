@@ -1,35 +1,54 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/aicc_hacp/db" VERSION="2025101300" COMMENT="XMLDB file for local_aicc_hacp plugin">
-  <TABLES>
-    <TABLE NAME="local_aicc_hacp_logs" COMMENT="Logs for AICC HACP requests">
-      <FIELDS>
-        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-        <FIELD NAME="session_id" TYPE="char" LENGTH="36" NOTNULL="false"/>
-        <FIELD NAME="command" TYPE="char" LENGTH="255" NOTNULL="false"/>
-        <FIELD NAME="request_body" TYPE="text" NOTNULL="false"/>
-        <FIELD NAME="signature_valid" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
-        <FIELD NAME="remote_ip" TYPE="char" LENGTH="45" NOTNULL="false"/>
-        <FIELD NAME="user_agent" TYPE="char" LENGTH="255" NOTNULL="false"/>
-        <FIELD NAME="parsed_data_json" TYPE="text" NOTNULL="false"/>
-        <FIELD NAME="result_code" TYPE="int" LENGTH="3" NOTNULL="false"/>
-        <FIELD NAME="result_message" TYPE="char" LENGTH="255" NOTNULL="false"/>
-        <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
-      </FIELDS>
-      <KEYS>
-        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
-      </KEYS>
-    </TABLE>
-    <TABLE NAME="local_aicc_hacp_usermap" COMMENT="Manual user mappings for AICC HACP">
-      <FIELDS>
-        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-  <FIELD NAME="external_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
-  <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
-  <FIELD NAME="trusted_origin" TYPE="char" LENGTH="100" NOTNULL="false"/>
-      </FIELDS>
-      <KEYS>
-        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
-        <KEY NAME="external_id_uk" TYPE="unique" FIELDS="external_id, trusted_origin"/>
-      </KEYS>
-    </TABLE>
-  </TABLES>
+<XMLDB PATH="local/aicc_hacp/db" VERSION="2023101100" COMMENT="XMLDB file for Moodle - local_aicc_hacp"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
+>
+    <TABLES>
+        <TABLE NAME="local_aicc_hacp_users" COMMENT="User mapping for AICC HACP">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="externalsid" TYPE="char" LENGTH="255" NOTNULL="true" COMMENT="External session ID from AICC_SID"/>
+                <FIELD NAME="internaluserid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="ID of the internal proxy user"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="ID of the course being accessed"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="externalsid_uk" TYPE="unique" FIELDS="externalsid"/>
+            </KEYS>
+        </TABLE>
+        <TABLE NAME="local_aicc_hacp_tracking" COMMENT="AICC HACP tracking data">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Internal user ID"/>
+                <FIELD NAME="scormid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="SCORM ID"/>
+                <FIELD NAME="scoid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="SCO ID"/>
+                <FIELD NAME="element" TYPE="char" LENGTH="255" NOTNULL="true" COMMENT="AICC data element (e.g., cmi.core.lesson_status)"/>
+                <FIELD NAME="value" TYPE="text" NOTNULL="true" COMMENT="Value of the data element"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="user_scorm_sco_element_uk" TYPE="unique" FIELDS="userid, scormid, scoid, element"/>
+            </KEYS>
+        </TABLE>
+        <TABLE NAME="local_aicc_hacp_sessions" COMMENT="AICC HACP user sessions">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="aicc_sid" TYPE="char" LENGTH="255" NOTNULL="true" COMMENT="AICC Session ID"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="scormid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="scoid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="aicc_sid_uk" TYPE="unique" FIELDS="aicc_sid"/>
+            </KEYS>
+        </TABLE>
+    </TABLES>
 </XMLDB>

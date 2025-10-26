@@ -4,13 +4,11 @@ defined('MOODLE_INTERNAL') || die();
 
 $capabilities = [
     'local/aicc_export:export' => [
-        'riskbitmask' => RISK_DATALOSS,
         'captype' => 'write',
-        'contextlevel' => CONTEXT_COURSE,
+        'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
-            'editingteacher' => CAP_ALLOW,
             'manager' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
         ],
-        'clonepermissionsfrom' => 'moodle/course:update',
     ],
 ];

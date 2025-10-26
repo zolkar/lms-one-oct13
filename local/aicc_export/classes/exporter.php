@@ -4,18 +4,20 @@ namespace local_aicc_export;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once(__DIR__ . '/launcher.php');
+require_once(__DIR__ . '/token.php');
 
 class exporter {
 
     protected $course;
     protected $scorm;
     protected $scos;
+    protected $cm;
 
     public function __construct(\stdClass $course, \stdClass $scorm) {
         global $DB;
         $this->course = $course;
         $this->scorm = $scorm;
+        $this->cm = get_coursemodule_from_instance('scorm', $this->scorm->id, $this->course->id, false, MUST_EXIST);
         $this->scos = $DB->get_records('scorm_scoes', ['scorm' => $this->scorm->id], 'id');
     }
 
@@ -42,7 +44,14 @@ class exporter {
     protected function get_crs_content(): string {
         $content = "[Course]\r\n";
         $content .= "Course_ID=COURSE-{$this->course->id}\r\n";
-        $content .= "Course_Title={$this->course->fullname}\r\n";
+        $content .= "Course_Title={$this->escape_aicc($this->course->fullname)}\r\n";
+
+        $description = format_string($this->course->summary, true, ['context' => \context_course::instance($this->course->id)]);
+        $content .= "Course_Description={$this->escape_aicc($description)}\r\n";
+
+        $aicc_url = new \moodle_url('/local/aicc_hacp/endpoint.php');
+        $content .= "AICC_URL={$this->escape_aicc($aicc_url->out(true))}\r\n";
+
         $content .= "Version=1.0\r\n";
         $content .= "Course_Date=" . date('Y-m-d') . "\r\n";
         return $content;
@@ -60,10 +69,17 @@ class exporter {
     }
 
     protected function get_des_content(): string {
+        global $USER;
+
         $content = "[Description]\r\n";
-        $content .= "Title={$this->scorm->name}\r\n";
-        $content .= "Author=Moodle A\r\n";
-        $content .= "Abstract=Access SCORM hosted on Moodle A\r\n";
+        $content .= "Title={$this->escape_aicc($this->scorm->name)}\r\n";
+
+        $author = fullname($USER);
+        $content .= "Author={$this->escape_aicc($author)}\r\n";
+
+        $abstract = format_string($this->scorm->intro, true, ['context' => \context_module::instance($this->cm->id)]);
+        $content .= "Abstract={$this->escape_aicc($abstract)}\r\n";
+
         return $content;
     }
 
@@ -122,18 +138,22 @@ class exporter {
 
     protected function get_launch_url(int $scoid): string {
         global $CFG;
+
         $ttl = get_config('local_aicc_export', 'launch_token_ttl');
         $payload = [
-            'au' => 'AU' . $scoid,
+            'courseid' => $this->course->id,
             'scormid' => $this->scorm->id,
             'scoid' => $scoid,
-            'courseid' => $this->course->id,
-            'issued_at' => time(),
             'expires_at' => time() + $ttl,
-            'nonce' => \core\uuid::generate(),
         ];
-        $token = launcher::sign_token($payload);
-        $url = new \moodle_url('/local/aicc_export/launch.php', ['token' => $token]);
-        return $url->out(true);
+        $token = token::sign($payload);
+
+        $baseurl = new \moodle_url('/local/aicc_export/launch.php');
+        $querystring = http_build_query(['token' => $token]);
+
+        $url = $baseurl->out(true) . '?' . $querystring;
+        $url .= '&AICC_SID=[AICC_SID]&AICC_URL=[AICC_URL]';
+
+        return $url;
     }
 }
