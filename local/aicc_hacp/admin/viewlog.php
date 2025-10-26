@@ -1,48 +1,74 @@
 <?php
+/**
+ * View HACP logs
+ */
 
 require_once(__DIR__ . '/../../../config.php');
-require_once($CFG->libdir . '/adminlib.php');
-require_once($CFG->libdir . '/tablelib.php');
 
-admin_externalpage_setup('local_aicc_hacp_viewlog');
+require_login();
+require_capability('local/aicc_hacp:viewlog', context_system::instance());
 
-$PAGE->set_title(get_string('view_logs', 'local_aicc_hacp'));
-$PAGE->set_heading(get_string('view_logs', 'local_aicc_hacp'));
+$perpage = optional_param('perpage', 50, PARAM_INT);
+$page = optional_param('page', 0, PARAM_INT);
+
+$PAGE->set_context(context_system::instance());
+$PAGE->set_url('/local/aicc_hacp/admin/viewlog.php');
+$PAGE->set_title('AICC HACP Logs');
+$PAGE->set_heading('AICC HACP Logs');
 
 echo $OUTPUT->header();
 
-$sort = optional_param('sort', 'created_at', PARAM_ALPHA);
-$dir = optional_param('dir', 'DESC', PARAM_ALPHA);
-$page = optional_param('page', 0, PARAM_INT);
-$perpage = 20;
+// Get total count
+$total = $DB->count_records('local_aicc_hacp_logs');
 
-$table = new \html_table();
+if ($total == 0) {
+    echo $OUTPUT->notification('No logs found', 'info');
+    echo $OUTPUT->footer();
+    exit;
+}
+
+// Get logs with pagination
+$logs = $DB->get_records('local_aicc_hacp_logs', [], 'created_at DESC', '*', $page * $perpage, $perpage);
+
+// Create table
+$table = new html_table();
 $table->head = [
-    new \html_table_cell(get_string('log_time', 'local_aicc_hacp')),
-    new \html_table_cell(get_string('log_session_id', 'local_aicc_hacp')),
-    new \html_table_cell(get_string('log_command', 'local_aicc_hacp')),
-    new \html_table_cell(get_string('log_result', 'local_aicc_hacp')),
-    new \html_table_cell(get_string('log_remote_ip', 'local_aicc_hacp')),
+    'Time',
+    'Session ID',
+    'Command',
+    'Result Code',
+    'Message',
+    'IP Address',
+    'Signature Valid'
 ];
-$table->attributes['class'] = 'admintable';
-
-$totalcount = $DB->count_records('local_aicc_hacp_logs');
-$logs = $DB->get_records('local_aicc_hacp_logs', null, "$sort $dir", '*', $page * $perpage, $perpage);
-
-echo $OUTPUT->paging_bar($totalcount, $page, $perpage, $PAGE->url);
 
 foreach ($logs as $log) {
-    $row = [];
-    $row[] = userdate($log->created_at);
-    $row[] = $log->session_id;
-    $row[] = $log->command;
-    $row[] = "{$log->result_code} - {$log->result_message}";
-    $row[] = $log->remote_ip;
-    $table->data[] = $row;
+    $valid_badge = $log->signature_valid ? 
+        html_writer::span('Valid', 'badge badge-success') : 
+        html_writer::span('Invalid', 'badge badge-danger');
+    
+    $table->data[] = [
+        userdate($log->created_at),
+        substr($log->session_id, 0, 20) . '...',
+        $log->command,
+        $log->result_code,
+        $log->result_message,
+        $log->remote_ip,
+        $valid_badge
+    ];
 }
 
 echo html_writer::table($table);
 
-echo $OUTPUT->paging_bar($totalcount, $page, $perpage, $PAGE->url);
+// Pagination
+$pagingbar = new paging_bar($total, $page, $perpage, $PAGE->url);
+echo $OUTPUT->render($pagingbar);
+
+// Summary
+echo html_writer::div(
+    html_writer::tag('strong', "Total logs: $total") .
+    html_writer::tag('p', "Showing page " . ($page + 1) . " of " . ceil($total / $perpage)),
+    'card'
+);
 
 echo $OUTPUT->footer();
