@@ -41,6 +41,8 @@ Plugin B (LMS-1 – HACP handler): Moodle doesn’t natively act as an AICC host
 Implements AICC endpoint(s).
 
 Handles requests from LMS-2 (student launch, progress, completion).
+For remote learners, just store tracking data separately, not visible in standard Moodle reports.
+You can add a simple custom report page (visible only to teachers on LMS-1) showing progress.
 
 Maps remote student to internal “proxy user” (via email or generated ID, i.e. create a new user on LMS-1 when new user on LMS-2 enrols).
 
