@@ -1,0 +1,66 @@
+# Quick Fix for LMS-2 Launch Error
+
+## Most Likely Issue
+
+When you import an AICC package on LMS-2, Moodle imports it as a regular SCORM package, NOT an AICC package. This means:
+- The URLs in the package are ignored
+- Moodle uses its own SCORM player
+- The AICC HACP communication doesn't work
+
+## What's Actually Happening
+
+1. You export from LMS-1 as AICC → Package has URLs pointing to LMS-1
+2. You import on LMS-2 as SCORM → Moodle extracts SCORM content, IGNORES AICC URLs
+3. Student accesses on LMS-2 → Moodle plays SCORM locally, NOT from LMS-1
+
+## The Real Solution
+
+For cross-LMS sharing to work, you need:
+
+### Option A: Direct URL Access (Current Implementation)
+
+The AICC package contains URLs like:
+```
+http://localhost:8300/lms-one/local/aicc_export/content_launcher.php?id=42&token=...
+```
+
+When a student clicks the SCORM activity on LMS-2, the content should open in an iframe/redirect to this URL.
+
+**Check**: In the browser, when you click the SCORM activity, what URL does it try to load?
+
+### Option B: Enable AICC HACP in SCORM Settings
+
+1. On LMS-2, go to the SCORM activity you imported
+2. Edit settings
+3. Scroll to "SCORM settings" 
+4. Look for "AICC HACP" or "External content"
+5. Check if there's an option to use external URLs
+6. Enable it if available
+
+### What to Check
+
+Open browser console (F12) and look:
+1. What URL is being requested?
+2. Is it pointing to lms-one or lms-two?
+3. What's the error response?
+
+## If Content Loads Locally (Wrong)
+
+If the SCORM content loads from LMS-2 (not LMS-1), then Moodle is using the extracted SCORM content instead of the AICC URLs. This means the package was imported as regular SCORM, not AICC.
+
+Solution: Make sure the import recognizes it as AICC, OR manually configure the SCORM to use external URLs.
+
+## Expected Behavior
+
+When working correctly:
+- Student clicks SCORM on LMS-2
+- Browser navigates/redirects to: http://localhost:8300/lms-one/local/aicc_export/content_launcher.php?id=42&token=...
+- Content loads from LMS-1
+- Progress tracked via HACP on LMS-1
+
+## Get the Actual Error
+
+Tell me:
+1. What error message do you see?
+2. What URL appears in the browser address bar?
+3. Any errors in browser console (F12)?
