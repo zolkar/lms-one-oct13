@@ -1,66 +1,49 @@
 <?php
 
 require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/classes/hacp_handler.php');
 
-define('NO_MOODLE_PAGE', true);
-
-require_once(__DIR__ . '/classes/auth.php');
-require_once(__DIR__ . '/classes/parser.php');
-require_once(__DIR__ . '/classes/handler.php');
-require_once(__DIR__ . '/lib.php');
-
-header('Content-Type: text/plain');
-
-// Initial setup and validation.
-if (!get_config('local_aicc_hacp', 'enabled')) {
-    local_aicc_hacp_respond(105, 'Service disabled');
+// Security checks.
+$allowed_origins = get_config('local_aicc_hacp', 'allowed_origins');
+if (!empty($allowed_origins)) {
+    $allowed_origins = explode("\n", trim($allowed_origins));
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    $is_allowed = false;
+    foreach ($allowed_origins as $origin) {
+        if (strpos($referer, trim($origin)) === 0) {
+            $is_allowed = true;
+            break;
+        }
+    }
+    if (!$is_allowed) {
+        header('HTTP/1.1 403 Forbidden');
+        exit;
+    }
 }
 
-if (get_config('local_aicc_hacp', 'require_https') && !is_https()) {
-    local_aicc_hacp_respond(100, 'HTTPS is required');
-}
-
-// Rate limiting.
-$maxrequests = get_config('local_aicc_hacp', 'max_requests_per_minute');
-if ($maxrequests > 0) {
+$requests_per_minute = get_config('local_aicc_hacp', 'requests_per_minute');
+if (!empty($requests_per_minute)) {
     $cache = \cache::make('local_aicc_hacp', 'ratelimit');
     $ip = getremoteaddr();
-    $key = 'ratelimit_' . $ip;
+    $key = "ratelimit_{$ip}";
     $count = $cache->get($key);
     if ($count === false) {
         $count = 0;
     }
-    if ($count >= $maxrequests) {
-        local_aicc_hacp_respond(106, 'Rate limit exceeded');
+    if ($count >= $requests_per_minute) {
+        header('HTTP/1.1 429 Too Many Requests');
+        exit;
     }
     $cache->set($key, $count + 1, 60);
 }
 
-// Origin validation.
-$allowed_origins = get_config('local_aicc_hacp', 'allowed_origins');
-if (!empty($allowed_origins)) {
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
-    if (empty($origin) || !in_array($origin, explode(',', $allowed_origins))) {
-        local_aicc_hacp_respond(102, 'Invalid origin');
-    }
-}
+$aicc_sid = required_param('AICC_SID', PARAM_TEXT);
+$command = required_param('command', PARAM_TEXT);
+$aiccdata = optional_param('aicc_data', '', PARAM_RAW);
 
-// Get request parameters.
-$command = required_param('command', PARAM_ALPHANUMEXT);
-$session_id = required_param('session_id', PARAM_RAW);
-$aicc_data = optional_param('aicc_data', '', PARAM_RAW);
+$handler = new \local_aicc_hacp\hacp_handler($aicc_sid);
+$response = $handler->process_request($command, $aiccdata);
 
-// Authenticate the request.
-$signature_valid = \local_aicc_hacp\auth::validate_request($_POST, $_SERVER);
-if (!$signature_valid) {
-    local_aicc_hacp_log(102, 'Signature validation failed', $session_id, $command, http_build_query($_POST));
-    local_aicc_hacp_respond(102, 'Signature validation failed');
-}
-
-// Process the request.
-$parsed = \local_aicc_hacp\parser::parse_aicc($aicc_data);
-$response = \local_aicc_hacp\handler::process($command, $session_id, $parsed);
-
-// Log and respond.
-local_aicc_hacp_log($response['code'], $response['text'], $session_id, $command, http_build_query($_POST), 1, $parsed);
-local_aicc_hacp_respond($response['code'], $response['text'], $response['data']);
+header('Content-Type: text/plain');
+echo $response;
+exit;

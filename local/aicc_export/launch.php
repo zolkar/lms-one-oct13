@@ -1,36 +1,44 @@
 <?php
 
 require_once(__DIR__ . '/../../config.php');
-require_once(__DIR__ . '/classes/launcher.php');
+require_once(__DIR__ . '/classes/token.php');
+require_once($CFG->dirroot . '/local/aicc_hacp/classes/user_mapper.php');
 
 $token = required_param('token', PARAM_RAW);
+$aicc_sid = required_param('AICC_SID', PARAM_TEXT);
+$aicc_url = required_param('AICC_URL', PARAM_URL);
 
-$payload = \local_aicc_export\launcher::validate_token($token);
-
+$payload = \local_aicc_export\token::validate($token);
 if (!$payload) {
-    print_error('error_invalid_token', 'local_aicc_export');
+    print_error('invalidtoken', 'local_aicc_export');
 }
 
-$course = $DB->get_record('course', ['id' => $payload['courseid']], '*', MUST_EXIST);
-$scorm = $DB->get_record('scorm', ['id' => $payload['scormid'], 'course' => $payload['courseid']], '*', MUST_EXIST);
+$courseid = $payload['courseid'];
+$scormid = $payload['scormid'];
+$scoid = $payload['scoid'];
+
+$user = \local_aicc_hacp\user_mapper::get_or_create_user($aicc_sid, $courseid);
+
+$course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+$scorm = $DB->get_record('scorm', ['id' => $scormid, 'course' => $courseid], '*', MUST_EXIST);
 $cm = get_coursemodule_from_instance('scorm', $scorm->id, $course->id, false, MUST_EXIST);
 
-require_login($course, true, $cm);
-
 $session = new \stdClass();
-$session->session_id = \core\uuid::generate();
-$session->token_nonce = $payload['nonce'];
-$session->scormid = $scorm->id;
-$session->scoid = $payload['scoid'];
-$session->courseid = $course->id;
-$session->au = $payload['au'];
-$session->status = 'active';
-$session->created_at = $payload['issued_at'];
-$session->expires_at = $payload['expires_at'];
-$session->last_activity_at = time();
-$session->origin = $_SERVER['HTTP_REFERER'] ?? '';
+$session->aicc_sid = $aicc_sid;
+$session->userid = $user->id;
+$session->courseid = $courseid;
+$session->scormid = $scormid;
+$session->scoid = $scoid;
+$session->timecreated = time();
+$session->timemodified = time();
+$DB->insert_record('local_aicc_hacp_sessions', $session);
 
-$DB->insert_record('local_aicc_export_sessions', $session);
+complete_user_login($user);
+\core\session\manager::set_user($user);
 
-$scorm_url = new moodle_url('/mod/scorm/player.php', ['id' => $cm->id, 'remote_session' => $session->session_id]);
+$scorm_url = new moodle_url('/mod/scorm/player.php', [
+    'id' => $cm->id,
+    'aicc_sid' => $aicc_sid,
+    'aicc_url' => $aicc_url,
+]);
 redirect($scorm_url);
