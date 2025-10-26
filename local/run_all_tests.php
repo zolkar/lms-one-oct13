@@ -6,7 +6,8 @@
  */
 
 define('CLI_SCRIPT', true);
-require_once(__DIR__ . '/../../config.php');
+define('CACHE_DISABLE_ALL', true);
+require_once(__DIR__ . '/../config.php');
 
 echo "\n";
 echo str_repeat('=', 70) . "\n";

@@ -2,7 +2,49 @@
 
 require_once(__DIR__ . '/../../config.php');
 
-$courseid = required_param('courseid', PARAM_INT);
+$courseid = optional_param('courseid', 0, PARAM_INT);
+
+// If no courseid provided, show course selector
+if (!$courseid) {
+    $PAGE->set_context(context_system::instance());
+    $PAGE->set_url(new moodle_url('/local/aicc_export/index.php'));
+    $PAGE->set_title('Export AICC Package');
+    $PAGE->set_heading('Export AICC Package');
+    
+    echo $OUTPUT->header();
+    
+    echo '<h2>Select a Course to Export</h2>';
+    echo '<p>Please select a course that contains SCORM activities:</p>';
+    
+    // Get courses with SCORM activities
+    $courses_with_scorm = $DB->get_records_sql("
+        SELECT DISTINCT c.id, c.shortname, c.fullname, COUNT(cm.id) as scorm_count
+        FROM {course} c
+        JOIN {course_modules} cm ON cm.course = c.id
+        JOIN {modules} m ON m.id = cm.module AND m.name = 'scorm'
+        WHERE cm.deletioninprogress = 0 AND c.id > 1
+        GROUP BY c.id, c.shortname, c.fullname
+        HAVING scorm_count > 0
+        ORDER BY c.shortname
+    ");
+    
+    if (empty($courses_with_scorm)) {
+        echo $OUTPUT->notification('No courses with SCORM activities found. Please add a SCORM activity to a course first.', 'info');
+    } else {
+        echo '<ul>';
+        foreach ($courses_with_scorm as $course) {
+            $url = new moodle_url('/local/aicc_export/index.php', ['courseid' => $course->id]);
+            echo '<li>';
+            echo html_writer::link($url, "{$course->shortname} - {$course->fullname}");
+            echo " ({$course->scorm_count} SCORM activity/ies)";
+            echo '</li>';
+        }
+        echo '</ul>';
+    }
+    
+    echo $OUTPUT->footer();
+    exit;
+}
 
 $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 
