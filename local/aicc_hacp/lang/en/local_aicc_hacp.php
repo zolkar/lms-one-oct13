@@ -1,46 +1,57 @@
 <?php
 
-defined('MOODLE_INTERNAL') || die();
-
 $string['pluginname'] = 'AICC HACP';
-$string['aicc_hacp'] = 'AICC HACP';
+$string['external_progress_report'] = 'External Students Progress';
+$string['student_details'] = 'Student Details';
+$string['no_external_students'] = 'No external students found';
+$string['course'] = 'Course';
+$string['scorm_activity'] = 'SCORM Activity';
+$string['external_students'] = 'External Students';
+$string['active_sessions'] = 'Active Sessions';
+$string['actions'] = 'Actions';
+$string['view_details'] = 'View Details';
+$string['student_id'] = 'Student ID';
+$string['origin_lms'] = 'Origin LMS';
+$string['lesson_status'] = 'Lesson Status';
+$string['score'] = 'Score';
+$string['session_time'] = 'Session Time';
+$string['last_activity'] = 'Last Activity';
+$string['session_status'] = 'Session Status';
+$string['reset_progress'] = 'Reset Progress';
+$string['confirm_reset_progress'] = 'Are you sure you want to reset this student\'s progress? This action cannot be undone.';
+$string['summary_statistics'] = 'Summary Statistics';
+$string['total_external_students'] = 'Total External Students';
+$string['completed_students'] = 'Completed Students';
+$string['passed_students'] = 'Passed Students';
+$string['all_courses'] = 'All Courses';
+$string['no_scoes'] = 'No SCOs found for this SCORM activity';
+
+// Settings
 $string['settings_title'] = 'AICC HACP Settings';
 $string['setting_enabled'] = 'Enable AICC HACP';
-$string['setting_enabled_desc'] = 'Enable or disable the AICC HACP endpoint.';
+$string['setting_enabled_desc'] = 'Enable the AICC HACP service for external LMS communication';
 $string['setting_allowed_origins'] = 'Allowed Origins';
-$string['setting_allowed_origins_desc'] = 'A comma-separated list of domains or IP addresses that are allowed to make HACP requests.';
+$string['setting_allowed_origins_desc'] = 'Comma-separated list of allowed origins (leave empty to allow all)';
 $string['setting_shared_secret'] = 'Shared Secret';
-$string['setting_shared_secret_desc'] = 'The shared secret used for HMAC validation of HACP requests.';
+$string['setting_shared_secret_desc'] = 'Secret key for HMAC signature validation';
 $string['setting_require_https'] = 'Require HTTPS';
-$string['setting_require_https_desc'] = 'Require that all HACP requests are made over HTTPS.';
+$string['setting_require_https_desc'] = 'Require HTTPS for all HACP communications';
 $string['setting_log_level'] = 'Log Level';
-$string['setting_log_level_desc'] = 'The level of detail to log for HACP requests.';
-$string['log_level_none'] = 'None';
-$string['log_level_error'] = 'Error';
-$string['log_level_info'] = 'Info';
-$string['log_level_debug'] = 'Debug';
+$string['setting_log_level_desc'] = 'Level of logging for HACP requests';
 $string['setting_max_requests_per_minute'] = 'Max Requests Per Minute';
-$string['setting_max_requests_per_minute_desc'] = 'The maximum number of HACP requests allowed per minute from a single IP address.';
-$string['error_bad_request'] = 'Bad request / missing param';
-$string['error_unknown_command'] = 'Unknown command';
-$string['error_auth_failure'] = 'Auth/signature failure';
-$string['error_session_not_found'] = 'Session not found';
-$string['error_user_mapping_failed'] = 'User mapping failed';
-$string['error_db_error'] = 'DB error / persistence failure';
-$string['error_rate_limit_exceeded'] = 'Rate limit exceeded';
-$string['view_logs'] = 'View Logs';
-$string['view_logs_desc'] = 'View the AICC HACP request logs.';
-$string['log_time'] = 'Time';
-$string['log_session_id'] = 'Session ID';
-$string['log_command'] = 'Command';
-$string['log_result'] = 'Result';
-$string['log_remote_ip'] = 'Remote IP';
-$string['manual_mapping'] = 'Manual User Mapping';
-$string['manual_mapping_desc'] = 'Manually map external user IDs to Moodle users.';
-$string['add_mapping'] = 'Add New Mapping';
-$string['external_id'] = 'External ID';
-$string['moodle_user_id'] = 'Moodle User ID';
-$string['moodle_user'] = 'Moodle User';
-$string['trusted_origin'] = 'Trusted Origin';
-$string['add'] = 'Add';
-$string['action'] = 'Action';
+$string['setting_max_requests_per_minute_desc'] = 'Maximum number of requests per minute per session (0 = no limit)';
+$string['setting_launch_token_secret'] = 'Launch Token Secret';
+$string['setting_launch_token_secret_desc'] = 'Secret key for generating launch tokens';
+$string['setting_launch_token_ttl'] = 'Launch Token TTL';
+$string['setting_launch_token_ttl_desc'] = 'Time-to-live for launch tokens in seconds';
+$string['setting_session_timeout'] = 'Session Timeout';
+$string['setting_session_timeout_desc'] = 'Session timeout in seconds';
+
+// Log levels
+$string['log_level_none'] = 'None';
+$string['log_level_error'] = 'Errors Only';
+$string['log_level_info'] = 'Info and Errors';
+$string['log_level_debug'] = 'Debug (All)';
+
+$string['progress_reset_success'] = 'Student progress has been reset successfully';
+$string['progress_reset_error'] = 'Error resetting student progress';

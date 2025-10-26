@@ -3,7 +3,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_aicc_hacp';
-$plugin->version   = 2025101300;   //  plugin version.
+$plugin->version   = 2025101302;   //  plugin version.
 $plugin->requires  = 2022041900;   // Moodle 4.2 minimum.
 $plugin->maturity = MATURITY_ALPHA;
 $plugin->release = '0.1.0';

@@ -5,6 +5,7 @@ namespace local_aicc_hacp;
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/mapper.php');
+require_once(__DIR__ . '/session_persistence.php');
 require_once($GLOBALS['CFG']->dirroot . '/mod/scorm/lib.php');
 
 class handler {
@@ -24,7 +25,7 @@ class handler {
 
     protected static function get_param(string $session_id, array $parsed_data): array {
         global $DB;
-        $session = $DB->get_record('local_aicc_export_sessions', ['session_id' => $session_id]);
+        $session = $DB->get_record('local_aicc_hacp_sessions', ['session_id' => $session_id]);
         if (!$session) {
             return ['code' => 103, 'text' => 'Session not found', 'data' => ''];
         }
@@ -34,18 +35,14 @@ class handler {
             return ['code' => 100, 'text' => 'Missing Student_ID', 'data' => ''];
         }
 
-        // Get stored state for this student
-        $state = $DB->get_record('local_aicc_hacp_student_state', [
-            'student_id' => $student_id,
-            'scormid' => $session->scormid,
-            'scoid' => $session->scoid
-        ]);
+        // Get persistent progress for this student
+        $progress = \local_aicc_hacp\session_persistence::get_student_progress($student_id, $session->scormid, $session->scoid);
 
-        if ($state) {
-            // Return stored state data
-            $aicc_data = self::build_aicc_data_from_state($state);
+        if ($progress) {
+            // Return stored progress data
+            $aicc_data = self::build_aicc_data_from_state($progress);
         } else {
-            // No stored state, return default values
+            // No stored progress, return default values
             $aicc_data = self::get_default_aicc_data($student_id);
         }
 
@@ -55,7 +52,7 @@ class handler {
     protected static function put_param(string $session_id, array $parsed_data): array {
         global $DB;
 
-        $session = $DB->get_record('local_aicc_export_sessions', ['session_id' => $session_id]);
+        $session = $DB->get_record('local_aicc_hacp_sessions', ['session_id' => $session_id]);
         if (!$session) {
             return ['code' => 103, 'text' => 'Session not found', 'data' => ''];
         }
@@ -65,51 +62,26 @@ class handler {
             return ['code' => 100, 'text' => 'Missing Student_ID', 'data' => ''];
         }
 
-        // Store or update student state
-        $state = $DB->get_record('local_aicc_hacp_student_state', [
-            'student_id' => $student_id,
-            'scormid' => $session->scormid,
-            'scoid' => $session->scoid
-        ]);
+        // Save progress to persistent storage
+        \local_aicc_hacp\session_persistence::save_student_progress($student_id, $session->scormid, $session->scoid, $parsed_data);
 
-        if ($state) {
-            // Update existing state
-            $state->state_data = json_encode($parsed_data);
-            $state->lesson_status = $parsed_data['Core']['Lesson_Status'] ?? $state->lesson_status;
-            $state->lesson_location = $parsed_data['Core']['Lesson_Location'] ?? $state->lesson_location;
-            $state->score = $parsed_data['Core']['Score'] ?? $state->score;
-            $state->session_time = $parsed_data['Core']['Time'] ?? $state->session_time;
-            $state->updated_at = time();
-            $DB->update_record('local_aicc_hacp_student_state', $state);
-        } else {
-            // Create new state record
-            $state = new \stdClass();
-            $state->student_id = $student_id;
-            $state->scormid = $session->scormid;
-            $state->scoid = $session->scoid;
-            $state->state_data = json_encode($parsed_data);
-            $state->lesson_status = $parsed_data['Core']['Lesson_Status'] ?? '';
-            $state->lesson_location = $parsed_data['Core']['Lesson_Location'] ?? '';
-            $state->score = $parsed_data['Core']['Score'] ?? '';
-            $state->session_time = $parsed_data['Core']['Time'] ?? '';
-            $state->created_at = time();
-            $state->updated_at = time();
-            $DB->insert_record('local_aicc_hacp_student_state', $state);
-        }
+        // Also update the temporary session
+        $session->last_activity_at = time();
+        $DB->update_record('local_aicc_hacp_sessions', $session);
 
         return ['code' => 0, 'text' => 'Successful', 'data' => ''];
     }
 
     protected static function exit_au(string $session_id, array $parsed_data): array {
         global $DB;
-        $session = $DB->get_record('local_aicc_export_sessions', ['session_id' => $session_id]);
+        $session = $DB->get_record('local_aicc_hacp_sessions', ['session_id' => $session_id]);
         if (!$session) {
             return ['code' => 103, 'text' => 'Session not found', 'data' => ''];
         }
 
         $session->status = 'closed';
         $session->last_activity_at = time();
-        $DB->update_record('local_aicc_export_sessions', $session);
+        $DB->update_record('local_aicc_hacp_sessions', $session);
 
         return ['code' => 0, 'text' => 'Successful', 'data' => ''];
     }

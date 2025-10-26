@@ -22,30 +22,35 @@
     <TABLE NAME="local_aicc_hacp_usermap" COMMENT="Manual user mappings for AICC HACP">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-  <FIELD NAME="external_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
-  <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
-  <FIELD NAME="trusted_origin" TYPE="char" LENGTH="100" NOTNULL="false"/>
+        <FIELD NAME="external_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="trusted_origin" TYPE="char" LENGTH="100" NOTNULL="false"/>
+        <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="updated_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
         <KEY NAME="external_id_uk" TYPE="unique" FIELDS="external_id, trusted_origin"/>
       </KEYS>
     </TABLE>
-    <TABLE NAME="local_aicc_export_sessions" COMMENT="Sessions for AICC export launches">
+    <TABLE NAME="local_aicc_hacp_sessions" COMMENT="Secure sessions for AICC HACP">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
-        <FIELD NAME="session_id" TYPE="char" LENGTH="36" NOTNULL="true"/>
+        <FIELD NAME="session_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
         <FIELD NAME="scormid" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="scoid" TYPE="int" LENGTH="10" NOTNULL="true"/>
-        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="student_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
+        <FIELD NAME="origin" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="persistent_session_id" TYPE="int" LENGTH="10" NOTNULL="false"/>
         <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="'active'"/>
         <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="last_activity_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
-        <FIELD NAME="student_id" TYPE="char" LENGTH="100" NOTNULL="false"/>
+        <FIELD NAME="expires_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
         <KEY NAME="session_id_uk" TYPE="unique" FIELDS="session_id"/>
+        <KEY NAME="student_scorm_idx" TYPE="index" FIELDS="student_id, scormid, scoid"/>
       </KEYS>
     </TABLE>
     <TABLE NAME="local_aicc_hacp_student_state" COMMENT="Student state storage for AICC HACP">
@@ -65,6 +70,26 @@
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
         <KEY NAME="student_scorm_uk" TYPE="unique" FIELDS="student_id, scormid, scoid"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="local_aicc_hacp_persistent_sessions" COMMENT="Persistent sessions for external students">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="student_id" TYPE="char" LENGTH="100" NOTNULL="true"/>
+        <FIELD NAME="student_name" TYPE="char" LENGTH="255" NOTNULL="false" DEFAULT="'External Student'"/>
+        <FIELD NAME="student_email" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="scormid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="scoid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="origin" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="'active'"/>
+        <FIELD NAME="created_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="last_access_at" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="access_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="student_scorm_uk" TYPE="unique" FIELDS="student_id, scormid, scoid"/>
+        <KEY NAME="last_access_idx" TYPE="index" FIELDS="last_access_at"/>
       </KEYS>
     </TABLE>
   </TABLES>

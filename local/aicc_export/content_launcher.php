@@ -1,37 +1,72 @@
 <?php
 
-// Standalone SCORM content launcher for external LMS systems
-// This serves the actual SCORM content and sets up HACP communication
+require_once(__DIR__ . '/../../config.php');
+
+// AICC content launcher for external LMS systems
+// This launches SCORM content for external students via AICC HACP
 
 // Get parameters
-$cmid = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-$session_id = isset($_GET['session_id']) ? $_GET['session_id'] : '';
-$command = isset($_GET['command']) ? $_GET['command'] : 'getparam';
-$student_id = isset($_GET['AICC_SID']) ? $_GET['AICC_SID'] : '';
+$cmid = required_param('id', PARAM_INT);
+$student_id = optional_param('AICC_SID', '', PARAM_ALPHANUMEXT);
 if (empty($student_id)) {
-    $student_id = isset($_GET['student_id']) ? $_GET['student_id'] : '';
+    $student_id = optional_param('student_id', '', PARAM_ALPHANUMEXT);
 }
 
-if (!$cmid) {
-    http_response_code(400);
-    echo "Error: Missing course module ID";
-    exit;
+// Get course module and SCORM info
+$cm = get_coursemodule_from_id('', $cmid, 0, false, MUST_EXIST);
+if ($cm->modname !== 'scorm') {
+    throw new \moodle_exception('error_non_scorm_hacp', 'local_aicc_export');
 }
 
-// If this is a HACP communication request (has session_id), redirect to HACP endpoint
-if (!empty($session_id)) {
-    $hacp_url = '/lms-one/local/aicc_hacp/endpoint.php?command=' . urlencode($command) . '&session_id=' . urlencode($session_id);
-    if (!empty($student_id)) {
-        $hacp_url .= '&AICC_SID=' . urlencode($student_id);
-    }
-    header('Location: ' . $hacp_url);
-    exit;
+$scorm = $DB->get_record('scorm', ['id' => $cm->instance], '*', MUST_EXIST);
+$course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
+
+// Enable AICC HACP for this SCORM activity if not already enabled
+if (!$scorm->allowaicchacp) {
+    $scorm->allowaicchacp = 1;
+    $DB->update_record('scorm', $scorm);
 }
 
-// This is a content launch request - redirect to SCORM content server
-$scorm_content_url = '/lms-one/local/aicc_export/scorm_content_server.php?id=' . $cmid;
-if (!empty($student_id)) {
-    $scorm_content_url .= '&student_id=' . urlencode($student_id);
+// Get the first SCO for this SCORM activity
+$scoes = $DB->get_records('scorm_scoes', ['scorm' => $scorm->id], 'id', 'id', 0, 1);
+if (empty($scoes)) {
+    throw new \moodle_exception('error_no_sco', 'local_aicc_export');
 }
-header('Location: ' . $scorm_content_url);
-exit;
+$sco = reset($scoes);
+
+// Generate a student ID if not provided
+if (empty($student_id)) {
+    $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
+}
+
+// Try to extract name and email from AICC parameters
+$student_name = optional_param('student_name', '', PARAM_TEXT);
+$student_email = optional_param('student_email', '', PARAM_EMAIL);
+
+// Create persistent session for this external student
+require_once(__DIR__ . '/../aicc_hacp/classes/session_persistence.php');
+$persistent_session = \local_aicc_hacp\session_persistence::get_persistent_session(
+    $student_id, 
+    $scorm->id, 
+    $sco->id, 
+    $_SERVER['HTTP_REFERER'] ?? ''
+);
+
+// Update the persistent session with name and email
+if ($student_name || $student_email) {
+    $persistent_session->student_name = $student_name ?: ($persistent_session->student_name ?? 'External Student');
+    $persistent_session->student_email = $student_email ?: ($persistent_session->student_email ?? '');
+    $DB->update_record('local_aicc_hacp_persistent_sessions', $persistent_session);
+}
+
+// Create HACP session
+$hacp_session_id = \local_aicc_hacp\session_persistence::create_hacp_session(
+    $student_id, 
+    $scorm->id, 
+    $sco->id, 
+    $_SERVER['HTTP_REFERER'] ?? ''
+);
+
+// Build the launch URL - use Moodle's built-in SCORM player
+$launch_url = new moodle_url('/mod/scorm/view.php', ['id' => $cmid, 'aiccsession' => $hacp_session_id]);
+redirect($launch_url);

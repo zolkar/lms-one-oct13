@@ -56,6 +56,29 @@ if ($hassiteconfig) {
         PARAM_INT
     ));
 
+    $settings->add(new admin_setting_configpasswordunmask(
+        'local_aicc_hacp/launch_token_secret',
+        get_string('setting_launch_token_secret', 'local_aicc_hacp'),
+        get_string('setting_launch_token_secret_desc', 'local_aicc_hacp'),
+        \core\uuid::generate()
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'local_aicc_hacp/launch_token_ttl',
+        get_string('setting_launch_token_ttl', 'local_aicc_hacp'),
+        get_string('setting_launch_token_ttl_desc', 'local_aicc_hacp'),
+        3600,
+        PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'local_aicc_hacp/session_timeout',
+        get_string('setting_session_timeout', 'local_aicc_hacp'),
+        get_string('setting_session_timeout_desc', 'local_aicc_hacp'),
+        7200,
+        PARAM_INT
+    ));
+
     $settings->add(new admin_setting_heading(
         'local_aicc_hacp_log_viewer',
         get_string('view_logs', 'local_aicc_hacp'),

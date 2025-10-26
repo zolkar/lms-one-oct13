@@ -5,7 +5,8 @@ define('NO_OUTPUT_BUFFERING', true);
 
 require_once(__DIR__ . '/../../config.php');
 
-require_once(__DIR__ . '/classes/auth.php');
+require_once(__DIR__ . '/classes/secure_auth.php');
+require_once(__DIR__ . '/classes/secure_session.php');
 require_once(__DIR__ . '/classes/parser.php');
 require_once(__DIR__ . '/classes/handler.php');
 require_once(__DIR__ . '/lib.php');
@@ -21,41 +22,43 @@ if (get_config('local_aicc_hacp', 'require_https') && !is_https()) {
     local_aicc_hacp_respond(100, 'HTTPS is required');
 }
 
-// Rate limiting.
-$maxrequests = get_config('local_aicc_hacp', 'max_requests_per_minute');
-if ($maxrequests > 0) {
-    $cache = \cache::make('local_aicc_hacp', 'ratelimit');
-    $ip = getremoteaddr();
-    $key = 'ratelimit_' . $ip;
-    $count = $cache->get($key);
-    if ($count === false) {
-        $count = 0;
-    }
-    if ($count >= $maxrequests) {
-        local_aicc_hacp_respond(106, 'Rate limit exceeded');
-    }
-    $cache->set($key, $count + 1, 60);
-}
-
-// Origin validation.
-$allowed_origins = get_config('local_aicc_hacp', 'allowed_origins');
-if (!empty($allowed_origins)) {
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
-    if (empty($origin) || !in_array($origin, explode(',', $allowed_origins))) {
-        local_aicc_hacp_respond(102, 'Invalid origin');
-    }
-}
-
 // Get request parameters.
 $command = required_param('command', PARAM_ALPHANUMEXT);
 $session_id = required_param('session_id', PARAM_RAW);
 $aicc_data = optional_param('aicc_data', '', PARAM_RAW);
 
-// Authenticate the request (temporarily disabled for testing)
-$signature_valid = true; // \local_aicc_hacp\auth::validate_request($_POST, $_SERVER);
+// Validate session ID format
+if (!\local_aicc_hacp\secure_session::validate_session_id($session_id)) {
+    local_aicc_hacp_log(103, 'Invalid session ID format', $session_id, $command, http_build_query($_POST));
+    local_aicc_hacp_respond(103, 'Invalid session ID format');
+}
+
+// Rate limiting by session ID
+$rate_limit_key = getremoteaddr() . '_' . $session_id;
+if (!\local_aicc_hacp\secure_auth::check_rate_limit($rate_limit_key)) {
+    local_aicc_hacp_log(106, 'Rate limit exceeded', $session_id, $command, http_build_query($_POST));
+    local_aicc_hacp_respond(106, 'Rate limit exceeded');
+}
+
+// Origin validation.
+$origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
+if (!empty($origin) && !\local_aicc_hacp\secure_auth::validate_origin($origin)) {
+    local_aicc_hacp_log(102, 'Invalid origin', $session_id, $command, http_build_query($_POST));
+    local_aicc_hacp_respond(102, 'Invalid origin');
+}
+
+// Authenticate the request
+$signature_valid = \local_aicc_hacp\secure_auth::validate_request($_POST, $_SERVER);
 if (!$signature_valid) {
     local_aicc_hacp_log(102, 'Signature validation failed', $session_id, $command, http_build_query($_POST));
     local_aicc_hacp_respond(102, 'Signature validation failed');
+}
+
+// Get and validate session
+$session = \local_aicc_hacp\secure_session::get_session($session_id);
+if (!$session) {
+    local_aicc_hacp_log(103, 'Session not found or expired', $session_id, $command, http_build_query($_POST));
+    local_aicc_hacp_respond(103, 'Session not found or expired');
 }
 
 // Process the request.

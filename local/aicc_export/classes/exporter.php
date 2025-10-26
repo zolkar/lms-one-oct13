@@ -175,6 +175,8 @@ class exporter {
         global $CFG;
         
         // Point to our content launcher that serves SCORM content without login
+        // This URL will be used by external LMS to launch content
+        // The content_launcher.php will handle session creation and content delivery
         $content_url = new \moodle_url('/local/aicc_export/content_launcher.php', [
             'id' => $activity->id
         ]);
@@ -182,49 +184,18 @@ class exporter {
         return $content_url->out(false);
     }
     
-    protected function create_hacp_session($session_id, $activity): void {
-        global $DB;
-        
-        // Get the SCORM instance
-        $scorm = $DB->get_record('scorm', ['id' => $activity->instance], '*', MUST_EXIST);
-        
-        // Create AICC session record for HACP communication
-        $aicc_session = new \stdClass();
-        $aicc_session->hacpsession = $session_id;
-        $aicc_session->scormid = $scorm->id;
-        $aicc_session->userid = 0; // External user - will be set by HACP
-        $aicc_session->timecreated = time();
-        $aicc_session->timemodified = time();
-        
-        // Check if session already exists
-        $existing = $DB->get_record('scorm_aicc_session', ['hacpsession' => $session_id]);
-        if ($existing) {
-            $aicc_session->id = $existing->id;
-            $aicc_session->timemodified = time();
-            $DB->update_record('scorm_aicc_session', $aicc_session);
-        } else {
-            $DB->insert_record('scorm_aicc_session', $aicc_session);
-        }
-    }
-
     protected function get_launch_url($activity): string {
         global $CFG;
         
-        // For SCORM activities, use the AICC handler directly
+        // For SCORM activities, use the content launcher
         if ($activity->modname === 'scorm') {
-            // Create URL that points to Moodle's AICC handler
-            $aicc_url = new \moodle_url('/mod/scorm/aicc.php', [
-                'command' => 'getparam',
-                'session_id' => 'HACP_SESSION_' . $activity->id
-            ]);
-            return $aicc_url->out(false);
+            return $this->get_hacp_launch_url($activity);
         } else {
             // For other activities, create a simple launch URL
             $modurl = new \moodle_url('/mod/' . $activity->modname . '/view.php', ['id' => $activity->id]);
             return $modurl->out(false);
         }
     }
-
     protected function escape_aicc($value): string {
         if ($value === null) return '';
         $value = str_replace(["\r", "\n"], '', (string)$value);
