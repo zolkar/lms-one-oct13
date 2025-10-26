@@ -1,6 +1,16 @@
 <?php
 
+// Define constants to bypass login requirements
+define('NO_MOODLE_COOKIES', true);
+
 require_once(__DIR__ . '/../../config.php');
+
+// Security: Only allow this endpoint if plugins are properly configured
+if (!get_config('local_aicc_export', 'enabled') || !get_config('local_aicc_hacp', 'enabled')) {
+    http_response_code(403);
+    echo "Error: Service not enabled";
+    exit;
+}
 
 // Secure AICC HACP endpoint that serves SCORM content for external students
 // This file handles AICC communication and content delivery
@@ -25,13 +35,17 @@ if (!empty($aiccsession)) {
     
     // Get the SCORM and course module info
     $scorm = $DB->get_record('scorm', ['id' => $session->scormid], '*', MUST_EXIST);
-    $cm = get_coursemodule_from_instance('scorm', $scorm->id, 0, false, MUST_EXIST);
     
-    if (!$cm) {
+    // Get the module ID for SCORM
+    $moduleid = $DB->get_field('modules', 'id', ['name' => 'scorm']);
+    if (!$moduleid) {
         http_response_code(404);
-        echo "Error: Course module not found";
+        echo "Error: SCORM module not found";
         exit;
     }
+    
+    // Get the course module
+    $cm = $DB->get_record('course_modules', ['instance' => $scorm->id, 'module' => $moduleid], '*', MUST_EXIST);
     
     // Get the SCO
     $sco = $DB->get_record('scorm_scoes', ['id' => $session->scoid], '*', MUST_EXIST);
@@ -42,6 +56,7 @@ if (!empty($aiccsession)) {
     
     // Get the SCORM package and construct the launch URL
     $fs = get_file_storage();
+    // Note: linter warning about context_module is a false positive - class exists in Moodle
     $cmcontext = context_module::instance($cm->id);
     
     // Find the main SCO file (typically the entry point)
@@ -129,20 +144,7 @@ if (!empty($aiccsession)) {
     exit;
 }
 
-// Fallback: direct content access (for internal testing)
-$scormid = required_param('id', PARAM_INT);
-$scorm = $DB->get_record('scorm', ['id' => $scormid], '*', MUST_EXIST);
-$cm = get_coursemodule_from_instance('scorm', $scorm->id, 0, false, MUST_EXIST);
-
-$modulecontext = context_module::instance($cm->id);
-$fs = get_file_storage();
-
-$files = $fs->get_area_files($modulecontext->id, 'mod_scorm', 'content', 0, 'sortorder, itemid, filepath, filename', false);
-if (empty($files)) {
-    http_response_code(404);
-    echo "Error: No SCORM content found";
-    exit;
-}
-
-$main_file = reset($files);
-send_stored_file($main_file, 0, 0, true);
+// If no AICC session, return error
+http_response_code(404);
+echo "Error: No AICC session provided";
+exit;

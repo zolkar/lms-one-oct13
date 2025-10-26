@@ -29,3 +29,4 @@ $string['export_description'] = 'This will export the course as an AICC package 
 $string['export_course_as_aicc'] = 'Export Course as AICC Package';
 $string['error_non_scorm_hacp'] = 'HACP communication requires SCORM activities.';
 $string['error_no_sco'] = 'No SCO (Shareable Content Object) found for SCORM activity.';
+$string['error_plugin_not_installed'] = 'Required plugin not installed: {$a}';

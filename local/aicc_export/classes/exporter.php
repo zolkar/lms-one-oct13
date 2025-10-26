@@ -172,13 +172,28 @@ class exporter {
     }
     
     protected function get_hacp_launch_url($activity): string {
-        global $CFG;
+        global $CFG, $DB; // $DB is already global in Moodle context
+        
+        // Generate a secure token for this SCORM activity
+        $scorm = $DB->get_record('scorm', ['id' => $activity->instance], '*', MUST_EXIST);
+        
+        // Include the secure_auth class from the aicc_hacp plugin  
+        $secure_auth_path = $CFG->dirroot . '/local/aicc_hacp/classes/secure_auth.php';
+        if (!file_exists($secure_auth_path)) {
+            throw new \moodle_exception('error_plugin_not_installed', 'local_aicc_export', '', 'local_aicc_hacp');
+        }
+        require_once($secure_auth_path);
+        $token = \local_aicc_hacp\secure_auth::generate_launch_token(
+            $this->course->id,
+            $scorm->id,
+            'external_lms'
+        );
         
         // Point to our content launcher that serves SCORM content without login
-        // This URL will be used by external LMS to launch content
-        // The content_launcher.php will handle session creation and content delivery
+        // This URL will be used by external LMS to launch content with a token
         $content_url = new \moodle_url('/local/aicc_export/content_launcher.php', [
-            'id' => $activity->id
+            'id' => $activity->id,
+            'token' => $token
         ]);
         
         return $content_url->out(false);

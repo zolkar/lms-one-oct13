@@ -307,6 +307,48 @@ class session_persistence {
     }
     
     /**
+     * Create or get external user account for tracking
+     */
+    public static function create_external_user_account(string $email, string $fullname, string $external_lms = 'Unknown LMS'): int {
+        global $DB;
+        
+        // Check if user already exists
+        $existing_user = $DB->get_record('user', ['email' => $email, 'deleted' => 0]);
+        if ($existing_user) {
+            return $existing_user->id;
+        }
+        
+        // Create new external user
+        $user = new \stdClass();
+        $user->username = 'external_' . time() . '_' . uniqid();
+        $name_parts = explode(' ', $fullname, 2);
+        $user->firstname = $name_parts[0];
+        $user->lastname = count($name_parts) > 1 ? $name_parts[1] : '';
+        $user->email = $email;
+        $user->idnumber = 'EXTERNAL_' . md5($email . $external_lms);
+        $user->confirmed = 1;
+        $user->mnethostid = 1;
+        $user->timecreated = time();
+        $user->timemodified = time();
+        $user->lastnamephonetic = '';
+        $user->firstnamephonetic = '';
+        $user->middlename = '';
+        $user->alternatename = '';
+        $user->city = '';
+        $user->country = '';
+        
+        // Generate a secure random password
+        $user->password = password_hash(uniqid('', true), PASSWORD_DEFAULT);
+        
+        $user_id = $DB->insert_record('user', $user);
+        
+        // Log the creation
+        error_log("External user created: ID={$user_id}, Email={$email}, LMS={$external_lms}");
+        
+        return $user_id;
+    }
+    
+    /**
      * Clean up expired persistent sessions
      */
     public static function cleanup_expired_sessions(): int {
