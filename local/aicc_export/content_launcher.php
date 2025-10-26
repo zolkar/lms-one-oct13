@@ -151,7 +151,7 @@ if (empty($student_name)) {
 
 // Also check for Moodle's standard SCORM parameters
 if (empty($student_email)) {
-    $student_email = optional_param('student_email', '', PARAM_EMAIL);
+$student_email = optional_param('student_email', '', PARAM_EMAIL);
 }
 if (empty($student_email)) {
     $student_email = optional_param('emailaddress', '', PARAM_EMAIL);
@@ -435,20 +435,67 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
         var startTime = Date.now();
         var lessonLocation = "";
         
+        // Track completion state
+        var isCompleted = false;
+        
         // Function to detect if content is completed
         function checkCompletion() {
+            // Skip if already completed
+            if (isCompleted) return;
+            
+            // More aggressive detection - look at page content
+            var pageText = document.body.innerText.toLowerCase();
+            var hasCompletionKeywords = /completed|finished|done|passed|congratulations|success|quiz complete|result|summary/i.test(pageText);
+            
             // Check for common completion indicators in the DOM
             var completionIndicators = [
                 document.querySelector(".slide.finish"),
                 document.querySelector("#finish"),
                 document.querySelector(".complete"),
                 document.querySelector("[data-completed=true]"),
-                document.title.indexOf("Complete") !== -1
+                document.querySelector(".result"),
+                document.querySelector(".conclusion"),
+                document.querySelector("[class*=\'complete\']"),
+                document.querySelector("[id*=\'complete\']"),
+                document.title.match(/complete|finished|done/i),
+                hasCompletionKeywords
             ];
             
             if (completionIndicators.some(ind => ind !== null && ind !== undefined && ind !== false)) {
                 console.log("Content appears to be completed");
+                isCompleted = true;
                 API.LMSSetValue("cmi.core.lesson_status", "completed");
+                
+                // Try to extract score from various sources
+                var score = null;
+                
+                // Method 1: Look for score in common class/id patterns
+                var scoreEl = document.querySelector(".score") || 
+                             document.querySelector("#score") ||
+                             document.querySelector("[class*=\'score\']") ||
+                             document.querySelector("[id*=\'score\']");
+                if (scoreEl && scoreEl.textContent) {
+                    var scoreText = scoreEl.textContent.match(/(\d+)%/);
+                    if (scoreText) score = parseInt(scoreText[1]);
+                }
+                
+                // Method 2: Look for "X%" anywhere in page text
+                if (!score && pageText) {
+                    var percentMatch = pageText.match(/(\d+)%/);
+                    if (percentMatch) score = parseInt(percentMatch[1]);
+                }
+                
+                // Method 3: Look for "Score: X" or "X / Y"
+                if (!score) {
+                    var scoreText = pageText.match(/score[:\s]+(\d+)/i) || pageText.match(/(\d+)\s*\/\s*\d+/);
+                    if (scoreText) score = parseInt(scoreText[1]);
+                }
+                
+                if (score !== null) {
+                    console.log("Found score: " + score);
+                    API.LMSSetValue("cmi.core.score.raw", score);
+                    API.LMSSetValue("cmi.core.lesson_status", score >= 70 ? "passed" : "failed");
+                }
             }
         }
         
@@ -469,12 +516,34 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
             checkCompletion();
         }
         
+        // Initialize lesson status as incomplete on start
+        setTimeout(function() {
+            API.LMSSetValue("cmi.core.lesson_status", "incomplete");
+            console.log("Initialized lesson_status to incomplete");
+        }, 1000);
+        
         // Send time update every 10 seconds
         setInterval(sendProgress, 10000);
+        
+        // Auto-mark as completed after 5 minutes of activity (fallback)
+        setTimeout(function() {
+            if (!isCompleted && (Date.now() - startTime) > 300000) {
+                console.log("Auto-completing after 5 minutes");
+                isCompleted = true;
+                API.LMSSetValue("cmi.core.lesson_status", "completed");
+            }
+        }, 300000);
         
         // Also send when page is about to unload
         window.addEventListener("beforeunload", function() {
             sendProgress();
+            // On close, mark as completed if they spent time
+            if (!isCompleted) {
+                var minutesSpent = (Date.now() - startTime) / 60000;
+                if (minutesSpent > 2) {
+                    API.LMSSetValue("cmi.core.lesson_status", "completed");
+                }
+            }
         });
         
         // Log API calls for debugging

@@ -132,11 +132,37 @@ foreach ($students as $student) {
     
     $actions = $reset_link . ' ' . $delete_link;
     
+    // Extract domain name and base path from origin URL
+    $origin_display = '-';
+    if (!empty($student->origin)) {
+        $parsed = parse_url($student->origin);
+        if (isset($parsed['host'])) {
+            $origin_display = $parsed['scheme'] . '://' . $parsed['host'];
+            if (isset($parsed['port'])) {
+                $origin_display .= ':' . $parsed['port'];
+            }
+            // Add the base path (e.g., /lms-two) but skip the query string
+            if (isset($parsed['scheme'], $parsed['host'], $parsed['path'])) {
+                // Split path by /
+                $pathparts = explode('/', trim($parsed['path'], '/'));
+                // Grab the first part for the "base" (if exists)
+                $base = !empty($pathparts) ? '/' . $pathparts[0] : '';
+                $origin_display = $parsed['scheme'] . '://' . $parsed['host'];
+                if (isset($parsed['port'])) {
+                    $origin_display .= ':' . $parsed['port'];
+                }
+                $origin_display .= $base;
+            }
+        } else {
+            $origin_display = $student->origin;
+        }
+    }
+    
     $table->data[] = [
         $student->student_name ?: 'External Student',
         $student->student_email ?: '-',
         $student->student_id,
-        $student->origin ?: '-',
+        $origin_display,
         $lesson_status_badge,
         $student->score ?: '-',
         $student->session_time ?: '-',
