@@ -16,8 +16,22 @@ if (!get_config('local_aicc_export', 'enabled') || !get_config('local_aicc_hacp'
 // This file handles AICC communication and content delivery
 
 // Get parameters
-$aiccsession = optional_param('aiccsession', '', PARAM_ALPHANUMEXT);
-$student_id = optional_param('AICC_SID', '', PARAM_ALPHANUMEXT);
+// Handle both regular and encoded parameter names
+$aiccsession = '';
+if (isset($_GET['aiccsession'])) {
+    $aiccsession = $_GET['aiccsession'];
+} elseif (isset($_SERVER['QUERY_STRING'])) {
+    // Try to parse from raw query string
+    if (preg_match('/aiccsession=([^&;]+)/', $_SERVER['QUERY_STRING'], $matches)) {
+        $aiccsession = urldecode($matches[1]);
+    }
+}
+
+$student_id = isset($_GET['AICC_SID']) ? $_GET['AICC_SID'] : '';
+
+// Debug logging
+error_log("secure_content_server called with aiccsession: {$aiccsession}");
+error_log("QUERY_STRING: " . ($_SERVER['QUERY_STRING'] ?? ''));
 
 // If we have an AICC session, we're launching for an external student
 if (!empty($aiccsession)) {
@@ -26,10 +40,57 @@ if (!empty($aiccsession)) {
     // Get the HACP session details
     require_once(__DIR__ . '/../aicc_hacp/classes/session_persistence.php');
     
-    $session = $DB->get_record('local_aicc_hacp_sessions', ['session_id' => $aiccsession]);
+    // Debug: Log the search
+    error_log("Looking for session: {$aiccsession}");
+    
+    // Force a fresh database connection to avoid transaction issues
+    // Wait a tiny bit to ensure database commit completed
+    usleep(10000); // 10ms
+    
+    try {
+        // Direct SQL query to bypass any Moodle caching/transaction issues
+        $sql = "SELECT * FROM mdl_local_aicc_hacp_sessions WHERE session_id = :sessionid";
+        $params = ['sessionid' => $aiccsession];
+        $session = $DB->get_record_sql($sql, $params);
+        
+        if ($session) {
+            error_log("Found session for {$aiccsession}");
+        } else {
+            error_log("Session not found in database: {$aiccsession}");
+            
+            // List what sessions DO exist
+            $all = $DB->get_records_sql("SELECT session_id, created_at FROM mdl_local_aicc_hacp_sessions ORDER BY created_at DESC LIMIT 5");
+            if ($all) {
+                error_log("Recent sessions in DB:");
+                foreach ($all as $s) {
+                    error_log("  - {$s->session_id}");
+                }
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Exception querying sessions: " . $e->getMessage());
+        $session = null;
+    }
+    
     if (!$session) {
         http_response_code(404);
-        echo "Error: Session not found";
+        echo "Error: Session not found\n";
+        echo "<!-- Debug: Looking for session_id = {$aiccsession} -->\n";
+        echo "<!-- Debug: Total sessions = " . $DB->count_records('local_aicc_hacp_sessions') . " -->\n";
+        
+        // Try to show all session IDs
+        try {
+            $all_sessions = $DB->get_records('local_aicc_hacp_sessions', [], 'created_at DESC', 'session_id, created_at', 0, 10);
+            if (!empty($all_sessions)) {
+                echo "<!-- Debug: All available session IDs:\n";
+                foreach ($all_sessions as $s) {
+                    echo "  - {$s->session_id} (created: " . date('Y-m-d H:i:s', $s->created_at) . ")\n";
+                }
+                echo " -->\n";
+            }
+        } catch (Exception $e) {
+            echo "<!-- Error listing sessions: " . htmlspecialchars($e->getMessage()) . " -->\n";
+        }
         exit;
     }
     

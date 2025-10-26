@@ -16,12 +16,38 @@ if (!get_config('local_aicc_export', 'enabled') || !get_config('local_aicc_hacp'
 // This launches SCORM content for external students via AICC HACP
 
 // Security: Validate token
-$token = optional_param('token', '', PARAM_ALPHANUMEXT);
+// Handle &amp; encoding issue by decoding HTML entities in the query string
+$token = '';
+if (isset($_GET['token'])) {
+    $token = $_GET['token'];
+} elseif (isset($_GET['amp;token'])) {
+    // Handle &amp; being converted to &amp;token key
+    $token = $_GET['amp;token'];
+} else {
+    // Try parsing from raw query string
+    $query_string = $_SERVER['QUERY_STRING'] ?? '';
+    if (preg_match('/[&;]token=([^&;]+)/', $query_string, $matches)) {
+        $token = urldecode($matches[1]);
+    } elseif (preg_match('/amp;token=([^&]+)/', $query_string, $matches)) {
+        $token = urldecode($matches[1]);
+    }
+}
+
+if (empty($token) && isset($_POST['token'])) {
+    $token = $_POST['token'];
+}
+
 if (empty($token)) {
     http_response_code(401);
-    echo "Error: Missing access token";
+    echo "Error: Missing access token\n";
+    echo "<!-- Debug: REQUEST_URI = " . htmlspecialchars($_SERVER['REQUEST_URI'] ?? '') . " -->\n";
+    echo "<!-- Debug: QUERY_STRING = " . htmlspecialchars($_SERVER['QUERY_STRING'] ?? '') . " -->\n";
+    echo "<!-- Debug: GET = " . print_r($_GET, true) . " -->\n";
     exit;
 }
+
+// Log for debugging
+error_log("Content launcher called with token: " . substr($token, 0, 50) . "...");
 
 require_once($CFG->dirroot . '/local/aicc_hacp/classes/secure_auth.php');
 $token_data = \local_aicc_hacp\secure_auth::validate_launch_token($token);
@@ -57,7 +83,8 @@ if (isset($token_data['scormid']) && $token_data['scormid'] > 0) {
 $course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
 
 // Enable AICC HACP for this SCORM activity if not already enabled
-if (!$scorm->allowaicchacp) {
+// Note: allowaicchacp property may not exist in all Moodle versions
+if (property_exists($scorm, 'allowaicchacp') && !$scorm->allowaicchacp) {
     $scorm->allowaicchacp = 1;
     $DB->update_record('scorm', $scorm);
 }
@@ -78,11 +105,20 @@ if (empty($student_id)) {
 $student_name = optional_param('student_name', '', PARAM_TEXT);
 $student_email = optional_param('student_email', '', PARAM_EMAIL);
 
-// Validate required student information
+// If no email provided, generate one from student_id
 if (empty($student_email)) {
-    http_response_code(400);
-    echo "Error: Student email is required for tracking";
-    exit;
+    // Generate email from student_id or use a default
+    if (!empty($student_id)) {
+        // Use the student_id from AICC to create a unique email
+        $student_email = str_replace([' ', '_'], '.', $student_id) . '@external-lms.local';
+    } else {
+        $student_email = 'external_student_' . time() . '@external-lms.local';
+    }
+}
+
+// Generate name if not provided
+if (empty($student_name)) {
+    $student_name = 'External Student ' . substr($student_id, 0, 10);
 }
 
 // Create or get external user account
@@ -108,16 +144,123 @@ $persistent_session->userid = $external_user_id;
 $DB->update_record('local_aicc_hacp_persistent_sessions', $persistent_session);
 
 // Create HACP session
-$hacp_session_id = \local_aicc_hacp\session_persistence::create_hacp_session(
-    $student_id, 
-    $scorm->id, 
-    $sco->id, 
-    $_SERVER['HTTP_REFERER'] ?? ''
+try {
+    $hacp_session_id = \local_aicc_hacp\session_persistence::create_hacp_session(
+        $student_id, 
+        $scorm->id, 
+        $sco->id, 
+        $_SERVER['HTTP_REFERER'] ?? ''
+    );
+    
+    error_log("Created HACP session: {$hacp_session_id} for student {$student_id}");
+    
+} catch (Exception $e) {
+    error_log("Error creating HACP session: " . $e->getMessage());
+    http_response_code(500);
+    echo "Error creating session: " . $e->getMessage();
+    exit;
+}
+
+// Serve the content directly without redirect
+// Get the SCORM package and construct the launch URL
+$fs = get_file_storage();
+$cmcontext = context_module::instance($cm->id);
+
+// Find the main SCO file (typically the entry point)
+// Get all files for this SCORM activity
+$sco_files = $fs->get_area_files($cmcontext->id, 'mod_scorm', 'content', 0);
+
+if (empty($sco_files)) {
+    http_response_code(404);
+    echo "Error: No SCORM content files found";
+    error_log("No SCORM files found for context {$cmcontext->id}");
+    exit;
+}
+
+// Find the entry point file
+$main_file = null;
+if (isset($sco->launch) && !empty($sco->launch)) {
+    // Look for file matching the launch path
+    $launch_file = trim($sco->launch, '/');
+    $launch_path = dirname($launch_file) . '/';
+    $launch_filename = basename($launch_file);
+    
+    error_log("Looking for launch file: path={$launch_path}, filename={$launch_filename}");
+    
+    foreach ($sco_files as $file) {
+        if ($file->get_filepath() === $launch_path && $file->get_filename() === $launch_filename) {
+            $main_file = $file;
+            error_log("Found launch file: " . $file->get_filepath() . $file->get_filename());
+            break;
+        }
+    }
+    
+    if (!$main_file) {
+        // Try just filename match
+        foreach ($sco_files as $file) {
+            if ($file->get_filename() === $launch_filename) {
+                $main_file = $file;
+                error_log("Found by filename only: " . $file->get_filepath() . $file->get_filename());
+                break;
+            }
+        }
+    }
+}
+
+if (!$main_file) {
+    // Fallback: find any index.html
+    foreach ($sco_files as $file) {
+        if ($file->get_filename() === 'index.html') {
+            $main_file = $file;
+            error_log("Found index.html: " . $file->get_filepath());
+            break;
+        }
+    }
+}
+
+if (!$main_file && !empty($sco_files)) {
+    // Last resort: use first file
+    $main_file = reset($sco_files);
+    error_log("Using first file: " . $main_file->get_filepath() . $main_file->get_filename());
+}
+
+if (!$main_file) {
+    http_response_code(404);
+    echo "Error: Could not find entry point file";
+    error_log("ERROR: No main file found!");
+    exit;
+}
+
+// Construct the URL to this file  
+$pluginfile_url = moodle_url::make_pluginfile_url(
+    $main_file->get_contextid(),
+    'mod_scorm',
+    'content',
+    0,
+    $main_file->get_filepath(),
+    $main_file->get_filename(),
+    true
 );
 
-// Instead of redirecting to Moodle's viewer (which requires login),
-// serve the content directly using our secure content server
-$secure_url = new moodle_url('/local/aicc_export/secure_content_server.php', [
-    'aiccsession' => $hacp_session_id
-]);
-redirect($secure_url);
+// Build the HACP URL for this session
+$hacp_url = $CFG->wwwroot . '/local/aicc_hacp/endpoint.php?session_id=' . $hacp_session_id;
+
+// Now serve an HTML wrapper that loads the SCORM content and initializes AICC HACP
+header('Content-Type: text/html; charset=utf-8');
+
+echo '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SCORM Content</title>
+    <script type="text/javascript">
+    var AICC_URL = "' . $hacp_url . '";
+    var AICC_SID = "' . $student_id . '";
+    // AICC API implementation would go here
+    </script>
+</head>
+<body>
+    <iframe src="' . $pluginfile_url->out() . '" width="100%" height="800px" frameborder="0" style="border: none;"></iframe>
+</body>
+</html>';
+exit;
