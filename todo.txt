@@ -1,0 +1,57 @@
+I have LMS-1 (Moodle 4.3) with a course C-1 that I want to share with another LMS-2 (Moodle 4.3).
+The goal is to export C-1 as an AICC package, which may include PDFs, audio, video, or SCORM activities.
+LMS-2 will import this AICC package as a SCORM activity within a course (e.g., C-2) and access content via HACP.
+
+Main Challenge
+
+We need tracking and progress synchronization between both LMSs.
+Example:
+
+A teacher on LMS-2 creates course C-2, adds the AICC-based SCORM activity.
+
+Students (S1, S2, S3, etc.) self-enroll and access C-1 through that activity.
+
+LMS-1 should display which external users (from LMS-2) are accessing C-1 and their progress (slides viewed, quizzes passed, etc.).
+
+When students return, their progress should resume, not reset.
+
+Tracking data should be available on both LMSs.
+
+Proposed Solution
+
+Plugin 1 (LMS-1):
+Exports a course as an AICC package, embedding links to LMS-1 plus authentication tokens/keys.
+
+Plugin 2 (LMS-1):
+Handles tracking, authentication, and communication via HACP (e.g., student identity, progress, completion data).
+
+Optional Plugin 3 (LMS-2):
+Only if necessary—facilitates viewing the shared course and sending user/progress data back to LMS-1.
+
+ToDo:
+
+Plugin A (LMS-1 – Exporter, just wrap links + metadata in AICC .crs, .au, .cst, .des files and a ZIP):
+
+Builds AICC package pointing back to LMS-1 URLs.
+
+Embeds a course-specific API key/token.
+
+Plugin B (LMS-1 – HACP handler): Moodle doesn’t natively act as an AICC host. we need a custom endpoint to receive and log HACP messages (e.g., GetParam, PutParam, ExitAU).
+
+Implements AICC endpoint(s).
+
+Handles requests from LMS-2 (student launch, progress, completion).
+
+Maps remote student to internal “proxy user” (via email or generated ID, i.e. create a new user on LMS-1 when new user on LMS-2 enrols).
+
+(Optional) Plugin C (LMS-2 – enhancer):
+
+Only if default SCORM player won’t send HACP correctly (some Moodle setups block or sanitize calls).
+If HACP posts aren’t reaching LMS-1 correctly (due to JS sandboxing, CSP, or missing params), you’ll need Plugin 3 on LMS-2 to handle the communication cleanly.
+
+I'm using docker and for testing purpose both LMS are on same machine i.e. http://localhost:8300/lms-two and http://localhost:8300/lms-one
+the php docker is like "docker exec -it apache_8 bash" then "cd /var/www/html/lms-one" the data is in "/var/www/lms-one-data"
+and the database is "docker exec -it mariadb_moodle bash" then "mysql -u root -pexample" the databases are lms_one and lms_two.
+
+Make a professional work, please add files for debuging, i.e. export test, token test, external users test, and as many as possible. 
+Try to cover every aspect, every scenario. I want full plug-ins with everything in them. 
