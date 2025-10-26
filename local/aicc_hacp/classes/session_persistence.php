@@ -160,6 +160,22 @@ class session_persistence {
         // Get or create persistent session
         $persistent_session = self::get_persistent_session($student_id, $scormid, $scoid, $origin);
         
+        // Check if there's already an active HACP session for this student
+        $existing_session = $DB->get_record('local_aicc_hacp_sessions', [
+            'student_id' => $student_id,
+            'scormid' => $scormid,
+            'scoid' => $scoid,
+            'status' => 'active'
+        ]);
+        
+        if ($existing_session && $existing_session->expires_at > time()) {
+            // Reuse existing session
+            $existing_session->last_activity_at = time();
+            $DB->update_record('local_aicc_hacp_sessions', $existing_session);
+            error_log("Reusing existing HACP session: {$existing_session->session_id}");
+            return $existing_session->session_id;
+        }
+        
         // Generate temporary HACP session ID
         $hacp_session_id = 'HACP_' . $scormid . '_' . $scoid . '_' . bin2hex(random_bytes(16));
         
@@ -178,6 +194,7 @@ class session_persistence {
         
         $DB->insert_record('local_aicc_hacp_sessions', $hacp_session);
         
+        error_log("Created new HACP session: {$hacp_session_id}");
         return $hacp_session_id;
     }
     

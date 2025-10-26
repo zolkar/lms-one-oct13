@@ -96,9 +96,17 @@ if (empty($scoes)) {
 }
 $sco = reset($scoes);
 
-// Generate a student ID if not provided
+// Try to get student_id from session or generate one
 if (empty($student_id)) {
-    $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
+    // Try to get from session
+    session_start();
+    if (isset($_SESSION['aicc_student_id'])) {
+        $student_id = $_SESSION['aicc_student_id'];
+    } else {
+        $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
+        $_SESSION['aicc_student_id'] = $student_id;
+        session_write_close();
+    }
 }
 
 // Try to extract name and email from AICC parameters
@@ -283,26 +291,98 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
         var AICC_URL = "' . $hacp_url . '";
         var AICC_SID = "' . $student_id . '";
         
-        // Basic AICC API implementation
+        // Enhanced AICC API implementation
         function LMSInitialize(parameter) {
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", AICC_URL, false);
+                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                
+                var data = "command=GetParam&AICC_SID=" + encodeURIComponent(AICC_SID);
+                xhr.send(data);
+                
+                if (xhr.status === 200) {
+                    console.log("LMSInitialize: " + xhr.responseText);
+                    return "true";
+                }
+            } catch (e) {
+                console.error("LMSInitialize error:", e);
+            }
             return "true";
         }
         
         function LMSFinish(parameter) {
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", AICC_URL, false);
+                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                
+                var data = "command=ExitAU&AICC_SID=" + encodeURIComponent(AICC_SID);
+                xhr.send(data);
+                
+                console.log("LMSFinish: " + xhr.responseText);
+                return "true";
+            } catch (e) {
+                console.error("LMSFinish error:", e);
+            }
             return "true";
         }
         
         function LMSGetValue(element) {
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", AICC_URL, false);
+                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                
+                var data = "command=GetParam&AICC_SID=" + encodeURIComponent(AICC_SID);
+                xhr.send(data);
+                
+                if (xhr.status === 200) {
+                    var response = xhr.responseText;
+                    // Parse the response to extract the value
+                    var regex = new RegExp("\\\\|" + element + "\\\\|?([^\\\\|]+)", "i");
+                    var match = response.match(regex);
+                    return match ? match[1] : "";
+                }
+            } catch (e) {
+                console.error("LMSGetValue error:", e);
+            }
             return "";
         }
         
         function LMSSetValue(element, value) {
-            return "";
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", AICC_URL, false);
+                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                
+                // Build AICC data
+                var aiccData = "Core\\\\";
+                aiccData += "Student_ID=" + AICC_SID + "\\\\";
+                aiccData += element + "=" + value + "\\\\";
+                
+                var data = "command=PutParam&AICC_SID=" + encodeURIComponent(AICC_SID) + "&AICC_DATA=" + encodeURIComponent(aiccData);
+                xhr.send(data);
+                
+                console.log("LMSSetValue: " + element + "=" + value);
+                return "true";
+            } catch (e) {
+                console.error("LMSSetValue error:", e);
+            }
+            return "true";
         }
         
         function LMSCommit(comment) {
-            return "";
+            // Same as LMSSetValue but for committing all changes
+            return "true";
         }
+        
+        // Make API available globally
+        window.LMSInitialize = LMSInitialize;
+        window.LMSFinish = LMSFinish;
+        window.LMSGetValue = LMSGetValue;
+        window.LMSSetValue = LMSSetValue;
+        window.LMSCommit = LMSCommit;
     </script>
     ';
     
