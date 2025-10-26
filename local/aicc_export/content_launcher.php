@@ -97,16 +97,17 @@ if (empty($scoes)) {
 $sco = reset($scoes);
 
 // Try to get student_id from session or generate one
+session_start();
 if (empty($student_id)) {
-    // Try to get from session
-    session_start();
     if (isset($_SESSION['aicc_student_id'])) {
         $student_id = $_SESSION['aicc_student_id'];
     } else {
-        $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
+    $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
         $_SESSION['aicc_student_id'] = $student_id;
-        session_write_close();
     }
+} else {
+    // Store the provided student_id in session
+    $_SESSION['aicc_student_id'] = $student_id;
 }
 
 // Try to extract name and email from various sources
@@ -175,13 +176,13 @@ $DB->update_record('local_aicc_hacp_persistent_sessions', $persistent_session);
 
 // Create HACP session
 try {
-    $hacp_session_id = \local_aicc_hacp\session_persistence::create_hacp_session(
-        $student_id, 
-        $scorm->id, 
-        $sco->id, 
-        $_SERVER['HTTP_REFERER'] ?? ''
-    );
-    
+$hacp_session_id = \local_aicc_hacp\session_persistence::create_hacp_session(
+    $student_id, 
+    $scorm->id, 
+    $sco->id, 
+    $_SERVER['HTTP_REFERER'] ?? ''
+);
+
     error_log("Created HACP session: {$hacp_session_id} for student {$student_id}");
     
 } catch (Exception $e) {
@@ -353,9 +354,10 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
                     xhr.open("POST", AICC_URL, false);
                     xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
                     
-                    var aiccData = "Core\\n" +
-                        "Student_ID=" + AICC_SID + "\\n" +
-                        aiccElement + "=" + value + "\\n";
+                    // Proper AICC format with section brackets
+                    var aiccData = "[Core]\n" +
+                        "Student_ID=" + AICC_SID + "\n" +
+                        aiccElement + "=" + value + "\n";
                     
                     var data = "command=PutParam&AICC_SID=" + encodeURIComponent(AICC_SID) + 
                                "&AICC_DATA=" + encodeURIComponent(aiccData);
@@ -391,16 +393,76 @@ if (strpos($main_file->get_filename(), '.html') !== false) {
         window.API = API;
         window.API_0 = API;
         
-        console.log("SCORM API initialized");
+        // Also make available to parent window (for iframes)
+        if (window.parent && window.parent !== window) {
+            window.parent.API = API;
+            window.parent.API_0 = API;
+        }
         
-        // Demo: Simulate progress after page load to test HACP
-        setTimeout(function() {
-            console.log("Demo: Simulating progress update...");
-            API.LMSSetValue("cmi.core.lesson_status", "incomplete");
-            API.LMSSetValue("cmi.core.lesson_location", "slide 1");
-            API.LMSSetValue("cmi.core.session_time", "00:00:10");
-            console.log("Demo: Progress updated");
-        }, 2000);
+        // SCORM 2004 support
+        window.API_1484_11 = API;
+        
+        console.log("SCORM API initialized for student: " + AICC_SID);
+        
+        // Track progress
+        var startTime = Date.now();
+        var lessonLocation = "";
+        
+        // Function to detect if content is completed
+        function checkCompletion() {
+            // Check for common completion indicators in the DOM
+            var completionIndicators = [
+                document.querySelector(".slide.finish"),
+                document.querySelector("#finish"),
+                document.querySelector(".complete"),
+                document.querySelector("[data-completed=true]"),
+                document.title.indexOf("Complete") !== -1
+            ];
+            
+            if (completionIndicators.some(ind => ind !== null && ind !== undefined && ind !== false)) {
+                console.log("Content appears to be completed");
+                API.LMSSetValue("cmi.core.lesson_status", "completed");
+            }
+        }
+        
+        // Function to send progress update
+        function sendProgress() {
+            var elapsed = Math.floor((Date.now() - startTime) / 1000);
+            var hours = Math.floor(elapsed / 3600);
+            var minutes = Math.floor((elapsed % 3600) / 60);
+            var seconds = elapsed % 60;
+            var timeStr = String(hours).padStart(2, "0") + ":" + 
+                         String(minutes).padStart(2, "0") + ":" + 
+                         String(seconds).padStart(2, "0");
+            
+            // Send session time
+            API.LMSSetValue("cmi.core.session_time", timeStr);
+            
+            // Check for completion
+            checkCompletion();
+        }
+        
+        // Send time update every 10 seconds
+        setInterval(sendProgress, 10000);
+        
+        // Also send when page is about to unload
+        window.addEventListener("beforeunload", function() {
+            sendProgress();
+        });
+        
+        // Log API calls for debugging
+        var originalSetValue = API.LMSSetValue;
+        API.LMSSetValue = function(element, value) {
+            console.log("SCORM API: LMSSetValue(" + element + ", " + value + ")");
+            return originalSetValue.call(this, element, value);
+        };
+        
+        var originalGetValue = API.LMSGetValue;
+        API.LMSGetValue = function(element) {
+            var result = originalGetValue.call(this, element);
+            console.log("SCORM API: LMSGetValue(" + element + ") = " + result);
+            return result;
+        };
     </script>
     ';
     

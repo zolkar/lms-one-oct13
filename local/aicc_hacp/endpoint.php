@@ -24,8 +24,14 @@ if (get_config('local_aicc_hacp', 'require_https') && !is_https()) {
 
 // Get request parameters.
 $command = required_param('command', PARAM_ALPHANUMEXT);
-$session_id = required_param('session_id', PARAM_RAW);
-$aicc_data = optional_param('aicc_data', '', PARAM_RAW);
+// Session ID can be in GET or POST
+$session_id = optional_param('session_id', '', PARAM_RAW);
+if (empty($session_id)) {
+    $session_id = optional_param('AICC_SID', '', PARAM_RAW);
+}
+
+// The parameter is uppercase 'AICC_DATA' in the POST request
+$aicc_data = optional_param('AICC_DATA', '', PARAM_RAW);
 
 // Validate session ID format
 if (!\local_aicc_hacp\secure_session::validate_session_id($session_id)) {
