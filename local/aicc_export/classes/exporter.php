@@ -196,7 +196,9 @@ class exporter {
             'token' => $token
         ]);
         
-        return $content_url->out(false);
+        // Return absolute URL so external LMS can access it
+        // The URL will point to LMS-1's content launcher
+        return $content_url->out(true);
     }
     
     protected function get_launch_url($activity): string {

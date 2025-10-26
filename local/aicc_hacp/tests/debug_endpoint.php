@@ -6,6 +6,7 @@
  * Usage: php debug_endpoint.php
  */
 
+define('CLI_SCRIPT', true);
 require_once(__DIR__ . '/../../../config.php');
 
 cli_heading('HACP Endpoint Debug');

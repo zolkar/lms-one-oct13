@@ -5,6 +5,7 @@
  * Usage: Run from CLI: php test_export.php
  */
 
+define('CLI_SCRIPT', true);
 require_once(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/../classes/exporter.php');
 

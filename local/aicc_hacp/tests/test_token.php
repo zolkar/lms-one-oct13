@@ -5,6 +5,7 @@
  * Usage: Run from CLI: php test_token.php
  */
 
+define('CLI_SCRIPT', true);
 require_once(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/../classes/secure_auth.php');
 

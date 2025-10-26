@@ -5,6 +5,7 @@
  * Usage: Run from CLI: php test_external_users.php
  */
 
+define('CLI_SCRIPT', true);
 require_once(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/../classes/session_persistence.php');
 
