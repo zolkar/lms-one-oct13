@@ -231,36 +231,92 @@ if (!$main_file) {
     exit;
 }
 
-// Construct the URL to this file  
-$pluginfile_url = moodle_url::make_pluginfile_url(
-    $main_file->get_contextid(),
-    'mod_scorm',
-    'content',
-    0,
-    $main_file->get_filepath(),
-    $main_file->get_filename(),
-    true
-);
+// Instead of using pluginfile which requires login, serve the file content directly
+// This allows external access without requiring authentication
 
-// Build the HACP URL for this session
+// Build the HACP URL for this session  
 $hacp_url = $CFG->wwwroot . '/local/aicc_hacp/endpoint.php?session_id=' . $hacp_session_id;
 
-// Now serve an HTML wrapper that loads the SCORM content and initializes AICC HACP
-header('Content-Type: text/html; charset=utf-8');
+// Get the file content
+$file_content = $main_file->get_content();
 
-echo '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>SCORM Content</title>
+// If it's an HTML file, we need to wrap it with AICC API and rewrite URLs
+if (strpos($main_file->get_filename(), '.html') !== false) {
+    // Serve the HTML file directly with AICC API embedded
+    header('Content-Type: text/html; charset=utf-8');
+    
+    // Inject AICC API into the HTML
+    $html = $file_content;
+    
+    // Rewrite relative URLs to point to our file server
+    $file_server_url = $CFG->wwwroot . '/local/aicc_export/file_server.php?id=' . $cm->id . '&file=';
+    
+    // Get the base path of the main file
+    $base_path = $main_file->get_filepath();
+    error_log("Base path: {$base_path}");
+    
+    // Replace relative URLs (handle paths like "res/data/player.js" or just "player.js")
+    // Patterns: src="res/data/file.js" or src="/res/data/file.js" or src="./file.js"
+    $html = preg_replace_callback(
+        '/(src|href)=["\']([^"\']+\.(js|css|png|jpg|gif|mp4|mp3|swf|xml|json|pdf))["\']/i',
+        function($matches) use ($file_server_url, $base_path) {
+            $url = $matches[2];
+            // Remove leading ./
+            $url = ltrim($url, './');
+            // If absolute path, remove leading /
+            if (strpos($url, '/') === 0) {
+                $url = ltrim($url, '/');
+            } else {
+                // Relative to current file
+                $url = $base_path . $url;
+            }
+            return $matches[1] . '="' . $file_server_url . $url . '"';
+        },
+        $html
+    );
+    
+    error_log("HTML with rewritten URLs (first 500 chars): " . substr($html, 0, 500));
+    
+    // Find the closing </head> tag and inject AICC API
+    $aicc_js = '
     <script type="text/javascript">
-    var AICC_URL = "' . $hacp_url . '";
-    var AICC_SID = "' . $student_id . '";
-    // AICC API implementation would go here
+        var AICC_URL = "' . $hacp_url . '";
+        var AICC_SID = "' . $student_id . '";
+        
+        // Basic AICC API implementation
+        function LMSInitialize(parameter) {
+            return "true";
+        }
+        
+        function LMSFinish(parameter) {
+            return "true";
+        }
+        
+        function LMSGetValue(element) {
+            return "";
+        }
+        
+        function LMSSetValue(element, value) {
+            return "";
+        }
+        
+        function LMSCommit(comment) {
+            return "";
+        }
     </script>
-</head>
-<body>
-    <iframe src="' . $pluginfile_url->out() . '" width="100%" height="800px" frameborder="0" style="border: none;"></iframe>
-</body>
-</html>';
+    ';
+    
+    if (strpos($html, '</head>') !== false) {
+        $html = str_replace('</head>', $aicc_js . '</head>', $html);
+    } else {
+        $html = $aicc_js . $html;
+    }
+    
+    echo $html;
+} else {
+    // For non-HTML files, serve as-is
+    header('Content-Type: ' . $main_file->get_mimetype());
+    echo $file_content;
+}
+
 exit;

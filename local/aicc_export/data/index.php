@@ -37,7 +37,7 @@ if (empty($student_id) && isset($_SERVER['HTTP_REFERER'])) {
 }
 
 // Construct the correct URL
-$correct_url = '/lms-one/local/aicc_export/scorm_content_server.php?id=' . $cmid . '&file=res/data/' . $file_path;
+$correct_url = '/lms-one/local/aicc_export/file_server.php?id=' . $cmid . '&file=res/data/' . $file_path;
 if (!empty($student_id)) {
     $correct_url .= '&student_id=' . urlencode($student_id);
 }
