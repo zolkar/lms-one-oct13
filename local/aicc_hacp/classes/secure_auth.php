@@ -60,11 +60,15 @@ class secure_auth {
             'expires_at' => time() + (get_config('local_aicc_hacp', 'launch_token_ttl') ?: 3600)
         ];
         
-        $header = base64_encode(json_encode(['typ' => 'JWT', 'alg' => 'HS256']));
-        $payload_encoded = base64_encode(json_encode($payload));
-        $signature = hash_hmac('sha256', $header . '.' . $payload_encoded, $secret);
+        // Use URL-safe base64 encoding
+        $header = rtrim(strtr(base64_encode(json_encode(['typ' => 'JWT', 'alg' => 'HS256'])), '+/', '-_'), '=');
+        $payload_encoded = rtrim(strtr(base64_encode(json_encode($payload)), '+/', '-_'), '=');
         
-        return $header . '.' . $payload_encoded . '.' . base64_encode($signature);
+        // Generate signature
+        $signature = hash_hmac('sha256', $header . '.' . $payload_encoded, $secret, true);
+        $signature_encoded = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
+        
+        return $header . '.' . $payload_encoded . '.' . $signature_encoded;
     }
     
     /**
@@ -76,6 +80,9 @@ class secure_auth {
             return null;
         }
         
+        // Decode URL-encoded token
+        $token = urldecode($token);
+        
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
             return null;
@@ -83,20 +90,27 @@ class secure_auth {
         
         list($header, $payload, $signature) = $parts;
         
-        // Verify signature
-        $expected_signature = hash_hmac('sha256', $header . '.' . $payload, $secret);
-        if (!hash_equals(base64_decode($signature), $expected_signature)) {
+        // Verify signature - decode from URL-safe base64
+        $signature_decoded = base64_decode(strtr($signature, '-_', '+/'));
+        $expected_signature = hash_hmac('sha256', $header . '.' . $payload, $secret, true);
+        
+        if (!hash_equals($signature_decoded, $expected_signature)) {
+            error_log("Token signature validation failed");
             return null;
         }
         
-        // Decode payload
-        $payload_data = json_decode(base64_decode($payload), true);
-        if (!$payload_data) {
+        // Decode payload - handle URL-safe base64
+        $payload_decoded = base64_decode(strtr($payload, '-_', '+/'));
+        $payload_data = json_decode($payload_decoded, true);
+        
+        if (!$payload_data || !is_array($payload_data)) {
+            error_log("Failed to decode token payload");
             return null;
         }
         
         // Check expiration
-        if ($payload_data['expires_at'] < time()) {
+        if (isset($payload_data['expires_at']) && $payload_data['expires_at'] < time()) {
+            error_log("Token expired: " . date('Y-m-d H:i:s', $payload_data['expires_at']) . " vs " . date('Y-m-d H:i:s', time()));
             return null;
         }
         
