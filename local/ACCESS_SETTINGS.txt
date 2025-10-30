@@ -1,0 +1,53 @@
+# How to Access AICC Plugin Settings
+
+## Direct Settings Page (RECOMMENDED)
+
+I've created a quick access page for configuring all AICC settings:
+
+**URL**: http://localhost:8300/lms-one/local/quick_settings.php
+
+This page allows you to:
+- Set the LMS-2 launcher URL
+- Configure token expiration times
+- Enable/disable HACP
+- Set launch token secrets
+- Access quick links to export and view progress
+
+## Alternative: Direct Configuration via Database
+
+If you need to configure settings without the admin interface:
+
+```bash
+# View current settings
+docker exec apache_8 bash -c "cd /var/www/html/lms-one && php -r \"define('CLI_SCRIPT', true); require_once('config.php'); echo 'Launcher URL: ' . get_config('local_aicc_export', 'lms2_launcher_url') . PHP_EOL;\""
+
+# Set launcher URL
+docker exec apache_8 bash -c "cd /var/www/html/lms-one && php admin/cli/cfg.php --name=local_aicc_export/lms2_launcher_url --set='http://localhost:8300/lms-two/local/aicc_use/launcher.php'"
+
+# Enable HACP
+docker exec apache_8 bash -c "cd /var/www/html/lms-one && php admin/cli/cfg.php --name=local_aicc_hacp/enabled --set=1"
+```
+
+## Quick Test URLs
+
+### Export
+http://localhost:8300/lms-one/local/aicc_export/index.php?courseid=9
+
+### View Progress
+http://localhost:8300/lms-one/local/aicc_hacp/admin/external_progress.php
+
+### View Student Details
+http://localhost:8300/lms-one/local/aicc_hacp/admin/student_details.php?courseid=9&scormid=34
+
+### View Logs
+http://localhost:8300/lms-one/local/aicc_hacp/admin/viewlog.php
+
+## All Issues Fixed
+
+✅ Port corrected to 8300 for both LMS
+✅ Invalid course module ID fixed in external_progress.php
+✅ Quick settings page created for easy configuration
+✅ Default launcher URL corrected to point to LMS-2
+
+The implementation is now complete and fully functional!
+

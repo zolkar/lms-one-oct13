@@ -96,21 +96,7 @@ if (empty($scoes)) {
 }
 $sco = reset($scoes);
 
-// Try to get student_id from session or generate one
-session_start();
-if (empty($student_id)) {
-    if (isset($_SESSION['aicc_student_id'])) {
-        $student_id = $_SESSION['aicc_student_id'];
-    } else {
-    $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
-        $_SESSION['aicc_student_id'] = $student_id;
-    }
-} else {
-    // Store the provided student_id in session
-    $_SESSION['aicc_student_id'] = $student_id;
-}
-
-// Try to extract name and email from various sources
+// Try to extract name and email from various sources FIRST
 error_log("=== AICC Launch Parameters ===");
 error_log("GET params: " . print_r($_GET, true));
 error_log("POST params: " . print_r($_POST, true));
@@ -175,7 +161,33 @@ if (empty($student_name)) {
     if (!empty($username)) {
         $student_name = $username;
     } else {
-        $student_name = 'External Student ' . substr($student_id, 0, 10);
+        $student_name = 'External Student';
+    }
+}
+
+// Check if this email already has a student_id (to prevent duplicates)
+session_start();
+$existing_student = $DB->get_record('local_aicc_hacp_persistent_sessions', [
+    'student_email' => $student_email,
+    'scormid' => $scorm->id
+]);
+
+if (!empty($existing_student)) {
+    // Reuse existing student_id for this email
+    $student_id = $existing_student->student_id;
+    error_log("Reusing existing student_id {$student_id} for email {$student_email}");
+} else {
+    // No existing student found, check session first
+    if (empty($student_id)) {
+        if (isset($_SESSION['aicc_student_id'])) {
+            $student_id = $_SESSION['aicc_student_id'];
+        } else {
+            $student_id = 'external_student_' . time() . '_' . rand(1000, 9999);
+            $_SESSION['aicc_student_id'] = $student_id;
+        }
+    } else {
+        // Store the provided student_id in session
+        $_SESSION['aicc_student_id'] = $student_id;
     }
 }
 
@@ -187,7 +199,30 @@ $external_user_id = \local_aicc_hacp\session_persistence::create_external_user_a
     $token_data['external_lms'] ?? 'Unknown LMS'
 );
 
-// Create persistent session for this external student
+// Check if a persistent session already exists for this email
+$existing_persistent = $DB->get_record('local_aicc_hacp_persistent_sessions', [
+    'student_email' => $student_email,
+    'scormid' => $scorm->id
+]);
+
+if ($existing_persistent) {
+    // Use existing persistent session
+    $persistent_session = $existing_persistent;
+    // Update it with latest info
+    $persistent_session->last_access_at = time();
+    $persistent_session->access_count = $persistent_session->access_count + 1;
+    $persistent_session->student_name = $student_name ?: 'External Student';
+    $persistent_session->userid = $external_user_id;
+    $persistent_session->origin = $_SERVER['HTTP_REFERER'] ?? '';
+    $DB->update_record('local_aicc_hacp_persistent_sessions', $persistent_session);
+    
+    // Use the existing student_id if different
+    if ($existing_persistent->student_id != $student_id) {
+        error_log("Switching from {$student_id} to {$existing_persistent->student_id} for email {$student_email}");
+        $student_id = $existing_persistent->student_id;
+    }
+} else {
+    // Create new persistent session
 $persistent_session = \local_aicc_hacp\session_persistence::get_persistent_session(
     $student_id, 
     $scorm->id, 
@@ -199,7 +234,9 @@ $persistent_session = \local_aicc_hacp\session_persistence::get_persistent_sessi
 $persistent_session->student_name = $student_name ?: 'External Student';
 $persistent_session->student_email = $student_email;
 $persistent_session->userid = $external_user_id;
+    $persistent_session->origin = $_SERVER['HTTP_REFERER'] ?? '';
 $DB->update_record('local_aicc_hacp_persistent_sessions', $persistent_session);
+}
 
 // Create HACP session
 try {

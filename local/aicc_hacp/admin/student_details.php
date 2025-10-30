@@ -30,14 +30,117 @@ $PAGE->navbar->add(get_string('external_students', 'local_aicc_hacp'));
 
 echo $OUTPUT->header();
 
-// Get external students and their progress
+// Clean up duplicate student_ids for the same email (consolidate to one student_id per email)
+$duplicate_emails = $DB->get_records_sql("
+    SELECT student_email, student_id, COUNT(*) as cnt
+    FROM {local_aicc_hacp_persistent_sessions}
+    WHERE scormid = ?
+    GROUP BY student_email, student_id
+    HAVING cnt > 1
+", [$scormid]);
+
+// For emails with multiple student_ids, keep the oldest one and update/reassign all related records
+$emails_to_consolidate = $DB->get_records_sql("
+    SELECT student_email, GROUP_CONCAT(student_id) as student_ids
+    FROM {local_aicc_hacp_persistent_sessions}
+    WHERE scormid = ?
+    GROUP BY student_email
+    HAVING COUNT(DISTINCT student_id) > 1
+", [$scormid]);
+
+foreach ($emails_to_consolidate as $email_group) {
+    $email = $email_group->student_email;
+    $student_ids = explode(',', $email_group->student_ids);
+    // Keep the first (oldest) student_id
+    $primary_student_id = $student_ids[0];
+    $secondary_ids = array_slice($student_ids, 1);
+    
+    foreach ($secondary_ids as $old_student_id) {
+        // Get all scoids for this old student_id
+        $old_states = $DB->get_records('local_aicc_hacp_student_state', [
+            'student_id' => $old_student_id,
+            'scormid' => $scormid
+        ]);
+        
+        foreach ($old_states as $old_state) {
+            // Check if primary student already has state for this scoid
+            $existing_state = $DB->get_record('local_aicc_hacp_student_state', [
+                'student_id' => $primary_student_id,
+                'scormid' => $scormid,
+                'scoid' => $old_state->scoid
+            ]);
+            
+            if ($existing_state) {
+                // Primary already has state - keep the one with most recent update
+                if ($old_state->updated_at > $existing_state->updated_at) {
+                    // Update primary with old state's data
+                    $existing_state->lesson_status = $old_state->lesson_status;
+                    $existing_state->lesson_location = $old_state->lesson_location;
+                    $existing_state->score = $old_state->score;
+                    $existing_state->session_time = $old_state->session_time;
+                    $existing_state->state_data = $old_state->state_data;
+                    $existing_state->updated_at = max($existing_state->updated_at, $old_state->updated_at);
+                    $DB->update_record('local_aicc_hacp_student_state', $existing_state);
+                }
+                // Delete old state
+                $DB->delete_records('local_aicc_hacp_student_state', ['id' => $old_state->id]);
+            } else {
+                // Primary doesn't have state - update student_id
+                $old_state->student_id = $primary_student_id;
+                $DB->update_record('local_aicc_hacp_student_state', $old_state);
+            }
+        }
+        
+        // Update sessions
+        $DB->execute("UPDATE {local_aicc_hacp_sessions} SET student_id = ? WHERE student_id = ? AND scormid = ?", 
+            [$primary_student_id, $old_student_id, $scormid]);
+        
+        // Delete old persistent session
+        $DB->execute("DELETE FROM {local_aicc_hacp_persistent_sessions} WHERE student_id = ? AND scormid = ?", 
+            [$old_student_id, $scormid]);
+    }
+}
+
+// Get external students and their progress (only one entry per email - use the latest)
 $sql = "
-    SELECT DISTINCT 
-        hs.student_id,
-        hs.origin,
-        hs.status as session_status,
-        hs.created_at as session_created,
-        hs.last_activity_at,
+    SELECT 
+        ps.student_id,
+        (
+            SELECT hs2.origin 
+            FROM {local_aicc_hacp_sessions} hs2 
+            WHERE hs2.student_id COLLATE utf8mb4_unicode_ci = ps.student_id COLLATE utf8mb4_unicode_ci 
+            AND hs2.scormid = ? 
+            AND hs2.scoid = ? 
+            ORDER BY hs2.last_activity_at DESC 
+            LIMIT 1
+        ) as origin,
+        (
+            SELECT hs2.status 
+            FROM {local_aicc_hacp_sessions} hs2 
+            WHERE hs2.student_id COLLATE utf8mb4_unicode_ci = ps.student_id COLLATE utf8mb4_unicode_ci 
+            AND hs2.scormid = ? 
+            AND hs2.scoid = ? 
+            ORDER BY hs2.last_activity_at DESC 
+            LIMIT 1
+        ) as session_status,
+        (
+            SELECT hs2.created_at 
+            FROM {local_aicc_hacp_sessions} hs2 
+            WHERE hs2.student_id COLLATE utf8mb4_unicode_ci = ps.student_id COLLATE utf8mb4_unicode_ci 
+            AND hs2.scormid = ? 
+            AND hs2.scoid = ? 
+            ORDER BY hs2.last_activity_at DESC 
+            LIMIT 1
+        ) as session_created,
+        (
+            SELECT hs2.last_activity_at 
+            FROM {local_aicc_hacp_sessions} hs2 
+            WHERE hs2.student_id COLLATE utf8mb4_unicode_ci = ps.student_id COLLATE utf8mb4_unicode_ci 
+            AND hs2.scormid = ? 
+            AND hs2.scoid = ? 
+            ORDER BY hs2.last_activity_at DESC 
+            LIMIT 1
+        ) as last_activity_at,
         ss.lesson_status,
         ss.lesson_location,
         ss.score,
@@ -45,15 +148,15 @@ $sql = "
         ss.updated_at as last_progress_update,
         ps.student_name,
         ps.student_email
-    FROM {local_aicc_hacp_sessions} hs
+    FROM {local_aicc_hacp_persistent_sessions} ps
     LEFT JOIN {local_aicc_hacp_student_state} ss ON (
-        ss.student_id COLLATE utf8mb4_unicode_ci = hs.student_id AND 
-        ss.scormid = hs.scormid AND 
-        ss.scoid = hs.scoid
+        ss.student_id COLLATE utf8mb4_unicode_ci = ps.student_id COLLATE utf8mb4_unicode_ci AND 
+        ss.scormid = ? AND 
+        ss.scoid = ?
     )
-    LEFT JOIN {local_aicc_hacp_persistent_sessions} ps ON ps.student_id COLLATE utf8mb4_unicode_ci = hs.student_id
-    WHERE hs.scormid = ? AND hs.scoid = ?
-    ORDER BY hs.last_activity_at DESC
+    WHERE ps.scormid = ?
+    GROUP BY ps.student_email
+    ORDER BY ps.last_access_at DESC
 ";
 
 $scoes = $DB->get_records('scorm_scoes', ['scorm' => $scormid], 'id', 'id', 0, 1);
@@ -64,7 +167,16 @@ if (empty($scoes)) {
 }
 
 $sco = reset($scoes);
-$students = $DB->get_records_sql($sql, [$scormid, $sco->id]);
+// Parameters: 4 subqueries x (scormid, scoid) + main query JOIN (scormid, scoid) + WHERE (scormid)
+// Total: (4x2) + 2 + 1 = 11 parameters
+$students = $DB->get_records_sql($sql, [
+    $scormid, $sco->id,  // subquery 1 (origin)
+    $scormid, $sco->id,  // subquery 2 (status)
+    $scormid, $sco->id,  // subquery 3 (created_at)
+    $scormid, $sco->id,  // subquery 4 (last_activity_at)
+    $scormid, $sco->id,  // main JOIN (ss)
+    $scormid             // WHERE
+]);
 
 if (empty($students)) {
     echo $OUTPUT->notification(get_string('no_external_students', 'local_aicc_hacp'), 'info');
